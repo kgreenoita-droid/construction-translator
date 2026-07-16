@@ -6,7 +6,6 @@ import urllib.error
 import aiohttp
 from aiohttp import web
 
-# WebSocket接続管理
 ws_clients = set()
 
 async def ws_handler(request):
@@ -65,8 +64,10 @@ async def api_handler(request):
             result = res.read()
         return web.Response(
             body=result,
-            content_type='application/json',
-            headers={'Access-Control-Allow-Origin': '*'}
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
         )
 
 async def speech_handler(request):
@@ -95,16 +96,20 @@ async def speech_handler(request):
             result = res.read()
         return web.Response(
             body=result,
-            content_type='application/json',
-            headers={'Access-Control-Allow-Origin': '*'}
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
         )
     except urllib.error.HTTPError as e:
         body = e.read()
         return web.Response(
             status=e.code,
             body=body,
-            content_type='application/json',
-            headers={'Access-Control-Allow-Origin': '*'}
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
         )
 
 async def options_handler(request):
@@ -122,21 +127,23 @@ async def static_handler(request):
         filename = 'instructor.html'
     if '..' in filename or filename.startswith('/'):
         raise web.HTTPForbidden()
+    ext = filename.split('.')[-1].lower()
+    content_types = {
+        'html': 'text/html; charset=utf-8',
+        'js': 'application/javascript',
+        'css': 'text/css',
+        'json': 'application/json',
+    }
+    ct = content_types.get(ext, 'application/octet-stream')
     try:
         with open(filename, 'rb') as f:
             content = f.read()
-        ext = filename.split('.')[-1].lower()
-        content_types = {
-            'html': 'text/html; charset=utf-8',
-            'js': 'application/javascript',
-            'css': 'text/css',
-            'json': 'application/json',
-        }
-        ct = content_types.get(ext, 'application/octet-stream')
         return web.Response(
             body=content,
-            content_type=ct,
-            headers={'Access-Control-Allow-Origin': '*'}
+            headers={
+                'Content-Type': ct,
+                'Access-Control-Allow-Origin': '*'
+            }
         )
     except FileNotFoundError:
         raise web.HTTPNotFound()
