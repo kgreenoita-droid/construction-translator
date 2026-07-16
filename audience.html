@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>受講者用 - 建設技能講習 通訳システム</title>
+<style>
+  :root {
+    --bg: #000; --bg2: #0d0d0d; --bg3: #111;
+    --border: #222; --text: #eee; --text2: #666;
+    --accent: #f0a500; --success: #3fb950; --danger: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans JP', 'Noto Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header {
+    background: #080808; border-bottom: 2px solid var(--accent);
+    padding: 8px 16px; display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  .header-icon { font-size: 20px; }
+  header h1 { font-size: 13px; font-weight: 700; color: var(--accent); }
+  .ws-status { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); }
+  .ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text2); }
+  .ws-dot.connected { background: var(--success); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* 言語選択バー */
+  .lang-bar {
+    background: #0a0a0a; border-bottom: 1px solid var(--border);
+    padding: 6px 14px; display: flex; align-items: center; gap: 6px;
+    flex-shrink: 0; flex-wrap: nowrap; overflow-x: auto;
+  }
+  .lang-bar-label { font-size: 11px; color: var(--text2); white-space: nowrap; flex-shrink: 0; }
+  .lang-chip {
+    display: flex; align-items: center; gap: 4px;
+    background: #111; border: 1px solid #333; border-radius: 16px;
+    padding: 3px 8px; cursor: pointer; user-select: none;
+    font-size: 12px; color: #666; transition: all 0.2s;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .lang-chip input { display: none; }
+  .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(240,165,0,0.08); }
+
+  /* APIキー設定（折りたたみ） */
+  .api-bar {
+    background: #080808; border-bottom: 1px solid var(--border);
+    padding: 6px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .api-input { background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 180px; }
+  .api-input::placeholder { color: #444; }
+  .api-save-btn { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .api-label { font-size: 11px; color: var(--text2); }
+
+  /* メインコンテンツ */
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 10px; gap: 8px; }
+
+  /* 日本語エリア */
+  .ja-block {
+    background: #0a0a1a; border: 1px solid #2a2a4a; border-radius: 10px;
+    padding: 10px 16px; flex-shrink: 0;
+  }
+  .ja-label { font-size: 10px; color: #5555aa; letter-spacing: 1px; margin-bottom: 4px; }
+  .ja-text { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.4; min-height: 32px; }
+  .ja-interim { font-size: 22px; font-weight: 700; color: #333; font-style: italic; }
+
+  /* 翻訳履歴 */
+  .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+  .hist-item {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; flex-shrink: 0; transition: border-color 0.3s;
+  }
+  .hist-item.latest { border-color: var(--accent); background: #0d0d0d; }
+
+  .hist-ja { font-size: 16px; font-weight: 700; color: #ccc; margin-bottom: 8px; line-height: 1.4; }
+  .hist-ja.interim { color: #333; font-style: italic; }
+
+  .hist-langs { display: flex; flex-direction: column; gap: 6px; }
+  .hist-lang-row { display: flex; align-items: baseline; gap: 8px; }
+  .hist-flag { font-size: 16px; flex-shrink: 0; }
+  .hist-name { font-size: 11px; color: #444; width: 80px; flex-shrink: 0; }
+  .hist-text { font-size: 20px; color: #ddd; line-height: 1.4; }
+  .hist-text.loading { color: #333; font-size: 13px; font-style: italic; }
+  .hist-text.empty { color: #222; font-size: 13px; }
+
+  .connecting-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 40px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="header-icon">🏗️</span>
+  <h1>建設技能講習 多言語通訳</h1>
+  <div class="ws-status">
+    <div class="ws-dot" id="wsDot"></div>
+    <span id="wsText">講師PCに接続中...</span>
+  </div>
+</header>
+
+<!-- APIキー設定 -->
+<div class="api-bar">
+  <span class="api-label">Anthropic API Key:</span>
+  <input type="password" class="api-input" id="apiKeyInput" placeholder="sk-ant-..." />
+  <button class="api-save-btn" onclick="saveApiKey()">保存</button>
+  <span style="font-size:11px;color:#444">※ このページで翻訳するため必要です</span>
+</div>
+
+<!-- 言語選択バー -->
+<div class="lang-bar">
+  <span class="lang-bar-label">表示言語（最大3つ）：</span>
+  <div id="langChips" style="display:flex;gap:6px;flex-wrap:nowrap;"></div>
+</div>
+
+<div class="content">
+  <div class="ja-block">
+    <div class="ja-label">🎙 日本語</div>
+    <div class="ja-text" id="jaText"><span style="color:#222">講師の音声を待機中...</span></div>
+  </div>
+  <div class="history-list" id="historyList">
+    <div class="connecting-msg">講師用PCと接続すると翻訳が表示されます</div>
+  </div>
+</div>
+
+<script>
+const LANGUAGES = [
+  { code:'zh', name:'中国語', native:'中文', flag:'🇨🇳' },
+  { code:'en', name:'英語', native:'English', flag:'🇺🇸' },
+  { code:'vi', name:'ベトナム語', native:'Tiếng Việt', flag:'🇻🇳' },
+  { code:'tl', name:'タガログ語', native:'Filipino', flag:'🇵🇭' },
+  { code:'id', name:'インドネシア語', native:'Bahasa', flag:'🇮🇩' },
+  { code:'my', name:'ミャンマー語', native:'မြန်မာ', flag:'🇲🇲' },
+  { code:'ne', name:'ネパール語', native:'नेपाली', flag:'🇳🇵' },
+  { code:'si', name:'シンハラ語', native:'සිංහල', flag:'🇱🇰' },
+  { code:'bn', name:'ベンガル語', native:'বাংলা', flag:'🇧🇩' },
+];
+
+let apiKey = localStorage.getItem('aud_api_key') || '';
+let selectedLangs = new Set(JSON.parse(localStorage.getItem('aud_langs') || '["zh","en","vi"]'));
+let history = [];
+const MAX_HISTORY = 5;
+let ws = null;
+let currentCategory = 'general';
+let currentContext = '';
+let currentContextText = '';
+
+function saveApiKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('aud_api_key', apiKey);
+  const btn = event.target;
+  btn.textContent = '✓ 保存';
+  btn.style.color = '#3fb950';
+  setTimeout(() => { btn.textContent = '保存'; btn.style.color = ''; }, 2000);
+}
+
+// 言語チップ
+function renderLangChips() {
+  const container = document.getElementById('langChips');
+  container.innerHTML = LANGUAGES.map(lang => {
+    const sel = selectedLangs.has(lang.code);
+    return `<label class="lang-chip ${sel?'selected':''}" id="chip-${lang.code}">
+      <input type="checkbox" value="${lang.code}" ${sel?'checked':''}>
+      ${lang.flag} ${lang.name}
+    </label>`;
+  }).join('');
+  container.querySelectorAll('input').forEach(cb => {
+    cb.addEventListener('change', () => toggleLang(cb.value, cb.checked));
+  });
+}
+
+function toggleLang(code, checked) {
+  if (checked) {
+    if (selectedLangs.size >= 3) {
+      const first = [...selectedLangs][0];
+      selectedLangs.delete(first);
+    }
+    selectedLangs.add(code);
+  } else {
+    selectedLangs.delete(code);
+  }
+  localStorage.setItem('aud_langs', JSON.stringify([...selectedLangs]));
+  renderLangChips();
+  renderHistory();
+}
+
+// WebSocket
+function connectWS() {
+  const host = location.hostname || '127.0.0.1';
+  ws = new WebSocket(`(() => {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const port = location.port ? `:${location.port}` : '';
+    return `${proto}//${location.hostname}${port}/ws`;
+  })()`);
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'ws-dot connected';
+    document.getElementById('wsText').textContent = '講師PCと接続済み';
+  };
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'ws-dot';
+    document.getElementById('wsText').textContent = '再接続中...';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = () => {};
+  ws.onmessage = async (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'transcript') {
+        await handleTranscript(data);
+      } else if (data.type === 'category') {
+        currentCategory = data.category;
+      } else if (data.type === 'settings') {
+        if (data.apiKey) {
+          apiKey = data.apiKey;
+          localStorage.setItem('aud_api_key', apiKey);
+          document.getElementById('apiStatusText').textContent = '✅ APIキー受信済み（講師PCから自動配信）';
+          document.getElementById('apiStatusText').style.color = '#3fb950';
+        }
+      }
+    } catch(err) {}
+  };
+}
+
+async function handleTranscript(data) {
+  const text = data.text;
+  currentContext = data.context || '';
+  currentContextText = data.contextText || '';
+  const apiKeyToUse = data.apiKey || apiKey;
+
+  // 日本語表示
+  document.getElementById('jaText').innerHTML = esc(text);
+
+  // 履歴に追加
+  const entry = { ja: text, translations: {}, loading: true };
+  history.unshift(entry);
+  if (history.length > MAX_HISTORY) history.pop();
+  renderHistory();
+
+  // 翻訳
+  if (!apiKeyToUse) {
+    entry.loading = false;
+    entry.translations = {};
+    renderHistory();
+    return;
+  }
+
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  if (!langs.length) { entry.loading = false; renderHistory(); return; }
+
+  const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
+  const ctxNote = currentContextText ? `\n\n【参考テキスト】\n${currentContextText}` : '';
+  const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
+講習: ${data.catName || ''} / 用語: ${currentContext}${ctxNote}
+
+日本語:「${text}」
+
+以下の言語へ翻訳してJSONのみ返してください:
+${langList}
+
+{"zh":"...","en":"..."}のように選択言語のキーのみ含めてください。`;
+
+  try {
+    const res = await fetch(`${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/api`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKeyToUse,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        stream: true,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '', fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const d = line.slice(6).trim();
+        if (d === '[DONE]') continue;
+        try {
+          const p = JSON.parse(d);
+          if (p.type === 'content_block_delta' && p.delta?.text) {
+            fullText += p.delta.text;
+            // 途中でもJSONが揃ったら表示
+            const m = fullText.match(/\{[\s\S]*\}/);
+            if (m) {
+              try {
+                entry.translations = JSON.parse(m[0]);
+                entry.loading = false;
+                renderHistory();
+              } catch(e) {}
+            }
+          }
+        } catch(e) {}
+      }
+    }
+
+    const m = fullText.match(/\{[\s\S]*\}/);
+    if (m) {
+      entry.translations = JSON.parse(m[0]);
+    }
+    entry.loading = false;
+    renderHistory();
+
+  } catch(err) {
+    entry.loading = false;
+    entry.error = true;
+    renderHistory();
+  }
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (!history.length) {
+    list.innerHTML = '<div class="connecting-msg">講師用PCと接続すると翻訳が表示されます</div>';
+    return;
+  }
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  list.innerHTML = history.map((item, idx) => {
+    const isLatest = idx === 0;
+    const langRows = langs.map(lang => {
+      const t = item.translations[lang.code];
+      const cls = item.loading ? 'loading' : (t ? '' : 'empty');
+      const txt = item.loading ? '翻訳中...' : (t || '－');
+      return `<div class="hist-lang-row">
+        <span class="hist-flag">${lang.flag}</span>
+        <span class="hist-name">${lang.name}</span>
+        <span class="hist-text ${cls}">${esc(txt)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="hist-item ${isLatest?'latest':''}">
+      <div class="hist-ja">${esc(item.ja)}</div>
+      <div class="hist-langs">${langRows}</div>
+    </div>`;
+  }).join('');
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function init() {
+  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
+  renderLangChips();
+  connectWS();
+}
+
+init();
+</script>
+</body>
+</html>

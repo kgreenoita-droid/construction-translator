@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>講師用 - 建設技能講習 通訳システム</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+    --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+    --accent: #f0a500; --accent2: #d4891a;
+    --danger: #f85149; --success: #3fb950;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans JP', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    background: var(--bg2); border-bottom: 2px solid var(--accent);
+    padding: 10px 20px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-icon { width: 36px; height: 36px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  header h1 { font-size: 15px; font-weight: 700; }
+  header p { font-size: 11px; color: var(--text2); }
+  .header-badge { background: #1a3a1a; border: 1px solid var(--success); color: var(--success); border-radius: 12px; padding: 3px 10px; font-size: 11px; font-weight: 700; margin-left: auto; }
+  .ws-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+  .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); }
+  .ws-dot.connected { background: var(--success); }
+
+  .main { flex: 1; padding: 16px; max-width: 900px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .card-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+  /* コントロール */
+  .control-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .mic-btn { display: flex; align-items: center; gap: 8px; background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all 0.2s; }
+  .mic-btn.recording { background: var(--danger); color: #fff; animation: recPulse 1.5s infinite; }
+  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,81,73,0.4)} 50%{box-shadow:0 0 0 8px rgba(248,81,73,0)} }
+  .mic-select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: inherit; max-width: 200px; }
+  .api-input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 13px; font-family: monospace; width: 200px; }
+  .api-input::placeholder { color: var(--text2); }
+  .save-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .save-btn:hover { background: var(--border); }
+  .mode-label { font-size: 12px; color: var(--text2); }
+  .mode-label.active { color: var(--success); font-weight: 700; }
+
+  /* 文字起し */
+  .transcript-box { font-size: 22px; font-weight: 700; color: var(--text); min-height: 60px; line-height: 1.5; margin-bottom: 10px; }
+  .transcript-interim { color: var(--text2); font-style: italic; }
+  .manual-row { display: flex; gap: 8px; }
+  .manual-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 15px; font-family: inherit; }
+  .manual-input:focus { outline: none; border-color: var(--accent); }
+  .translate-btn { background: var(--accent); border: none; color: #000; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .clear-btn2 { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+
+  /* 講習種別 */
+  .cat-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cat-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.2s; }
+  .cat-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+
+  /* 辞書・テキスト設定 */
+  .settings-toggle { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .settings-panel { display: none; margin-top: 10px; }
+  .settings-panel.open { display: block; }
+  .settings-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .stab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .stab-content { display: none; }
+  .stab-content.active { display: block; }
+  .dict-add-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .dict-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  .dict-add-btn { background: var(--accent); border: none; color: #000; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .dict-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .dict-item { display: flex; align-items: center; gap: 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 13px; }
+  .dict-wrong { color: var(--danger); flex: 1; }
+  .dict-correct { color: var(--success); flex: 1; }
+  .dict-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 14px; }
+  .dict-del:hover { color: var(--danger); }
+  .ctx-textarea { width: 100%; height: 100px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 10px; font-size: 12px; font-family: inherit; resize: vertical; margin-bottom: 8px; }
+  .ctx-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ctx-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .export-btn { background: #1a3a1a; border: 1px solid var(--success); color: var(--success); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 700; }
+  .import-btn { background: #1a2535; border: 1px solid #3a6ea8; color: #7db8f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 700; }
+  .ctx-status { font-size: 12px; color: var(--success); }
+
+  /* 送信ログ */
+  .sent-list { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .sent-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+  .sent-time { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .sent-text { font-size: 14px; color: var(--text); }
+
+  .status-row { display: flex; align-items: center; gap: 8px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); }
+  .status-dot.recording { background: var(--danger); animation: pulse 1s infinite; }
+  .status-dot.translating { background: var(--accent); animation: pulse 0.5s infinite; }
+  .status-dot.ready { background: var(--success); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .status-text { font-size: 12px; color: var(--text2); }
+
+  .audience-link { background: #1a2535; border: 1px solid #3a6ea8; color: #7db8f0; border-radius: 8px; padding: 10px 14px; font-size: 13px; text-align: center; }
+  .audience-link a { color: #7db8f0; font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-icon">🏗️</div>
+  <div>
+    <h1>建設技能講習 通訳システム</h1>
+    <p>講師用コントロールパネル</p>
+  </div>
+  <span class="header-badge">👨‍🏫 講師モード</span>
+  <div class="ws-status">
+    <div class="ws-dot" id="wsDot"></div>
+    <span id="wsText">未接続</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- 受講者ページへのリンク -->
+  <div class="audience-link">
+    👥 受講者用ページ：<a href="audience.html" target="_blank">audience.html を別ウィンドウで開く</a>
+    （同じWi-Fi内の他PCは <strong>http://[このPCのIPアドレス]:8080/audience.html</strong> でアクセス）
+  </div>
+
+  <!-- コントロール -->
+  <div class="card">
+    <div class="card-label">🎙 音声認識設定</div>
+    <div class="control-row">
+      <button class="mic-btn" id="micBtn" onclick="toggleRecording()">🎤 録音開始</button>
+      <select class="mic-select" id="micSelect" onchange="changeMic(this.value)">
+        <option value="">🎤 マイク選択中...</option>
+      </select>
+      <div class="status-row">
+        <div class="status-dot" id="statusDot"></div>
+        <span class="status-text" id="statusText">待機中</span>
+      </div>
+    </div>
+    <div class="control-row" style="margin-top:10px;">
+      <span style="font-size:12px;color:var(--text2)">Anthropic Key:</span>
+      <input type="password" class="api-input" id="apiKeyInput" placeholder="sk-ant-..." />
+      <button class="save-btn" onclick="saveApiKey()">保存</button>
+      <span style="font-size:12px;color:var(--text2)">Google STT:</span>
+      <input type="password" class="api-input" id="googleKeyInput" placeholder="AIza..." />
+      <button class="save-btn" onclick="saveGoogleKey()">保存</button>
+      <span class="mode-label" id="sttModeLabel">🎤 標準モード</span>
+    </div>
+  </div>
+
+  <!-- 講習種別 -->
+  <div class="card">
+    <div class="card-label">📚 講習種別</div>
+    <div class="cat-row" id="catRow"></div>
+  </div>
+
+  <!-- 文字起し -->
+  <div class="card">
+    <div class="card-label">📝 文字起し（日本語）</div>
+    <div class="transcript-box" id="transcriptBox">
+      <span style="color:var(--border)">ここに認識テキストが表示されます...</span>
+    </div>
+    <div class="manual-row">
+      <input class="manual-input" id="manualInput" placeholder="✏️ 修正・手動入力して送信..." onkeydown="if(event.key==='Enter') sendManual()" />
+      <button class="translate-btn" onclick="sendManual()">送信</button>
+      <button class="clear-btn2" onclick="clearManual()">クリア</button>
+    </div>
+  </div>
+
+  <!-- 辞書・テキスト設定 -->
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="card-label" style="margin:0">⚙️ 辞書・テキスト設定</div>
+      <button class="settings-toggle" onclick="toggleSettings()">開く / 閉じる</button>
+      <button class="export-btn" onclick="exportSettings()">📤 エクスポート</button>
+      <label class="import-btn">📥 インポート<input type="file" accept=".json" style="display:none" onchange="importSettings(event)"></label>
+    </div>
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-tabs">
+        <button class="stab active" onclick="switchTab('dict')">📖 ユーザー辞書</button>
+        <button class="stab" onclick="switchTab('ctx')">📄 テキスト読み込み</button>
+      </div>
+      <div class="stab-content active" id="tab-dict">
+        <div class="dict-add-row">
+          <input class="dict-input" id="dictWrong" placeholder="間違いやすい表記（例：関電）" />
+          <span style="color:var(--text2);align-self:center">→</span>
+          <input class="dict-input" id="dictCorrect" placeholder="正しい表記（例：感電）" />
+          <button class="dict-add-btn" onclick="addDict()">追加</button>
+        </div>
+        <div class="dict-list" id="dictList"></div>
+      </div>
+      <div class="stab-content" id="tab-ctx">
+        <textarea class="ctx-textarea" id="ctxTextarea" placeholder="講習テキストや用語集を貼り付け..."></textarea>
+        <div class="ctx-actions">
+          <label class="ctx-btn">📂 ファイル読込<input type="file" accept=".txt" style="display:none" onchange="loadTxtFile(event)"></label>
+          <button class="ctx-btn" onclick="saveCtx()">✓ 保存</button>
+          <button class="ctx-btn" onclick="clearCtx()">クリア</button>
+          <span class="ctx-status" id="ctxStatus"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 送信履歴 -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="card-label" style="margin:0">📋 送信履歴（受講者へ送信済み）</div>
+      <button class="clear-btn2" style="font-size:11px;padding:4px 8px" onclick="clearSentLog()">クリア</button>
+    </div>
+    <div class="sent-list" id="sentList">
+      <div style="color:var(--text2);font-size:13px;">まだ送信がありません</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const CATEGORIES = [
+  {id:'general', label:'🏗️ 共通'}, {id:'tamakake', label:'⛓️ 玉掛け'},
+  {id:'gas', label:'🔥 ガス溶接'}, {id:'arc', label:'⚡ アーク溶接'},
+  {id:'vehicle', label:'🚜 車両系建設機械'}, {id:'kouso', label:'🪜 高所作業車'},
+  {id:'forklift', label:'🏭 フォークリフト'}, {id:'crane', label:'🏗️ 小型クレーン'},
+  {id:'ashiba', label:'🧱 足場'}, {id:'harness', label:'🦺 フルハーネス'},
+];
+
+const CATEGORY_CONTEXT = {
+  general:'建設業全般の安全・作業用語（KY活動、保護具、リスクアセスメント、ヒヤリハット、労働安全衛生法）',
+  tamakake:'玉掛け作業（ワイヤーロープ、スリング、シャックル、フック、荷重計算、つり角度、安全荷重、モード係数）',
+  gas:'ガス溶接・切断（アセチレン、酸素、溶接棒、吹管、圧力調整器、逆火、バックファイア、フラッシュバック）',
+  arc:'アーク溶接（溶接電流、電圧、アーク長、スパッタ、アンダーカット、被覆アーク溶接、炭酸ガスアーク溶接）',
+  vehicle:'車両系建設機械（ショベル、ブルドーザー、転倒防止、掘削、整地、地耐力、作業計画）',
+  kouso:'高所作業車（作業床、最大積載荷重、ブーム、アウトリガー、安全帯、墜落制止、過負荷防止装置）',
+  forklift:'フォークリフト（フォーク、マスト、チルト、荷役、荷重中心、最大荷重、ヘッドガード、バックレスト）',
+  crane:'移動式クレーン（定格荷重、作業半径、ブーム長、アウトリガー、過負荷防止、巻過防止、玉掛け）',
+  ashiba:'足場（単管足場、枠組足場、手すり、幅木、足場板、壁つなぎ、筋交、養生シート）',
+  harness:'フルハーネス（ランヤード、フック、D環、落下距離、ショックアブソーバー、作業前点検、廃棄基準）',
+};
+
+// 状態
+let apiKey = localStorage.getItem('ins_api_key') || '';
+let googleApiKey = localStorage.getItem('ins_google_key') || '';
+let selectedMicId = localStorage.getItem('ins_mic_id') || '';
+let selectedCategory = 'general';
+let userDict = JSON.parse(localStorage.getItem('ins_dict') || '[]');
+let contextText = localStorage.getItem('ins_context') || '';
+let isRecording = false;
+let sentLog = [];
+let ws = null;
+
+// WebSocket接続
+function connectWS() {
+  const host = location.hostname || '127.0.0.1';
+  ws = new WebSocket(`(() => {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const port = location.port ? `:${location.port}` : '';
+    return `${proto}//${location.hostname}${port}/ws`;
+  })()`);
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'ws-dot connected';
+    document.getElementById('wsText').textContent = '受講者と接続中';
+    // 接続時にAPIキーと設定を配信
+    broadcastSettings();
+  };
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'ws-dot';
+    document.getElementById('wsText').textContent = '未接続';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = () => {};
+}
+
+function sendWS(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+// カテゴリ
+function renderCats() {
+  document.getElementById('catRow').innerHTML = CATEGORIES.map(c =>
+    `<button class="cat-btn ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
+  ).join('');
+}
+
+function selectCat(id) {
+  selectedCategory = id;
+  renderCats();
+  sendWS({ type: 'category', category: id });
+}
+
+// APIキー
+function saveApiKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('ins_api_key', apiKey);
+  flashBtn(event.target, '✓ 保存済み');
+  broadcastSettings();
+}
+
+function broadcastSettings() {
+  if (!apiKey) return;
+  sendWS({ type: 'settings', apiKey });
+}
+
+function saveGoogleKey() {
+  googleApiKey = document.getElementById('googleKeyInput').value.trim();
+  localStorage.setItem('ins_google_key', googleApiKey);
+  updateSTTLabel();
+  flashBtn(event.target, '✓ 保存済み');
+}
+
+function updateSTTLabel() {
+  const el = document.getElementById('sttModeLabel');
+  el.textContent = googleApiKey ? '🚀 Google STTモード' : '🎤 標準モード';
+  el.className = 'mode-label' + (googleApiKey ? ' active' : '');
+}
+
+function flashBtn(btn, text) {
+  const orig = btn.textContent;
+  btn.textContent = text;
+  btn.style.color = '#3fb950';
+  setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+}
+
+// マイク
+async function loadMicList() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach(t => t.stop());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    const sel = document.getElementById('micSelect');
+    sel.innerHTML = mics.map((m, i) =>
+      `<option value="${m.deviceId}" ${m.deviceId===selectedMicId?'selected':''}>${m.label||'マイク'+(i+1)}</option>`
+    ).join('');
+    if (!selectedMicId && mics.length) selectedMicId = sel.value;
+  } catch(e) {}
+}
+
+function changeMic(id) {
+  selectedMicId = id;
+  localStorage.setItem('ins_mic_id', id);
+  if (isRecording) {
+    if (googleApiKey) { stopGoogleSTT(); setTimeout(startGoogleSTT, 300); }
+    else { stopRecording(); setTimeout(startRecording, 300); }
+  }
+}
+
+// 録音制御
+function toggleRecording() {
+  if (isRecording) {
+    if (googleApiKey) stopGoogleSTT(); else stopRecording();
+  } else {
+    if (googleApiKey) startGoogleSTT(); else startRecording();
+  }
+}
+
+function setStatus(state, text) {
+  document.getElementById('statusDot').className = 'status-dot ' + state;
+  document.getElementById('statusText').textContent = text;
+}
+
+// 文字起し表示
+function showTranscript(text, isInterim) {
+  const box = document.getElementById('transcriptBox');
+  if (isInterim) {
+    box.innerHTML = `<span class="transcript-interim">${esc(text)}</span>`;
+  } else {
+    box.innerHTML = esc(text);
+    document.getElementById('manualInput').value = text;
+    // 受講者へ送信
+    const corrected = applyDict(text);
+    sendToAudience(corrected);
+  }
+}
+
+function sendToAudience(text) {
+  const context = CATEGORY_CONTEXT[selectedCategory] || '';
+  const catName = CATEGORIES.find(c => c.id === selectedCategory)?.label || '';
+  sendWS({
+    type: 'transcript',
+    text,
+    category: selectedCategory,
+    catName,
+    context,
+    contextText: contextText.slice(0, 2000),
+    apiKey,
+  });
+  addSentLog(text);
+}
+
+function sendManual() {
+  const text = document.getElementById('manualInput').value.trim();
+  if (!text) return;
+  showTranscript(text, false);
+}
+
+function clearManual() {
+  document.getElementById('manualInput').value = '';
+}
+
+// 送信ログ
+function addSentLog(text) {
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+  sentLog.unshift({ time, text });
+  if (sentLog.length > 30) sentLog.pop();
+  renderSentLog();
+}
+
+function renderSentLog() {
+  const list = document.getElementById('sentList');
+  if (!sentLog.length) { list.innerHTML = '<div style="color:var(--text2);font-size:13px;">まだ送信がありません</div>'; return; }
+  list.innerHTML = sentLog.map(item =>
+    `<div class="sent-item"><div class="sent-time">${item.time}</div><div class="sent-text">${esc(item.text)}</div></div>`
+  ).join('');
+}
+
+function clearSentLog() { sentLog = []; renderSentLog(); }
+
+// ユーザー辞書
+function applyDict(text) {
+  let r = text;
+  userDict.forEach(e => { r = r.split(e.wrong).join(e.correct); });
+  return r;
+}
+
+function addDict() {
+  const w = document.getElementById('dictWrong').value.trim();
+  const c = document.getElementById('dictCorrect').value.trim();
+  if (!w || !c) return;
+  userDict.push({ wrong: w, correct: c });
+  localStorage.setItem('ins_dict', JSON.stringify(userDict));
+  document.getElementById('dictWrong').value = '';
+  document.getElementById('dictCorrect').value = '';
+  renderDict();
+}
+
+function delDict(i) {
+  userDict.splice(i, 1);
+  localStorage.setItem('ins_dict', JSON.stringify(userDict));
+  renderDict();
+}
+
+function renderDict() {
+  const list = document.getElementById('dictList');
+  if (!userDict.length) { list.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px;">登録なし</div>'; return; }
+  list.innerHTML = userDict.map((e, i) =>
+    `<div class="dict-item"><span class="dict-wrong">${esc(e.wrong)}</span><span style="color:var(--text2)">→</span><span class="dict-correct">${esc(e.correct)}</span><button class="dict-del" onclick="delDict(${i})">✕</button></div>`
+  ).join('');
+}
+
+// テキスト設定
+function saveCtx() {
+  contextText = document.getElementById('ctxTextarea').value.trim();
+  localStorage.setItem('ins_context', contextText);
+  const s = document.getElementById('ctxStatus');
+  s.textContent = `✓ 保存（${contextText.length}文字）`;
+  setTimeout(() => { s.textContent = ''; }, 3000);
+}
+
+function clearCtx() {
+  document.getElementById('ctxTextarea').value = '';
+  contextText = '';
+  localStorage.setItem('ins_context', '');
+}
+
+function loadTxtFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { document.getElementById('ctxTextarea').value = ev.target.result; };
+  r.readAsText(f, 'UTF-8');
+}
+
+// エクスポート・インポート
+function exportSettings() {
+  const data = { dict: userDict, context: contextText };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'translator-settings.json';
+  a.click();
+}
+
+function importSettings(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.dict) { userDict = data.dict; localStorage.setItem('ins_dict', JSON.stringify(userDict)); renderDict(); }
+      if (data.context) { contextText = data.context; localStorage.setItem('ins_context', contextText); document.getElementById('ctxTextarea').value = contextText; }
+      alert('インポート完了しました！');
+    } catch(err) { alert('ファイルの読み込みに失敗しました'); }
+  };
+  r.readAsText(f, 'UTF-8');
+}
+
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('open');
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.stab').forEach((t, i) => t.classList.toggle('active', (i===0&&tab==='dict')||(i===1&&tab==='ctx')));
+  document.getElementById('tab-dict').classList.toggle('active', tab==='dict');
+  document.getElementById('tab-ctx').classList.toggle('active', tab==='ctx');
+}
+
+// Web Speech API
+let recognition = null;
+
+function startRecording() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert('このブラウザは音声認識に対応していません'); return; }
+  recognition = new SR();
+  recognition.lang = 'ja-JP';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  let interimTimer = null;
+  let lastInterim = '';
+
+  recognition.onstart = () => {
+    isRecording = true;
+    document.getElementById('micBtn').className = 'mic-btn recording';
+    document.getElementById('micBtn').textContent = '⏹ 録音停止';
+    setStatus('recording', '録音中...');
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if (final) {
+      if (interimTimer) { clearTimeout(interimTimer); interimTimer = null; }
+      lastInterim = '';
+      showTranscript(final, false);
+    } else if (interim) {
+      showTranscript(interim, true);
+      lastInterim = interim;
+      if (interimTimer) clearTimeout(interimTimer);
+      interimTimer = setTimeout(() => {
+        if (lastInterim) { showTranscript(lastInterim, false); lastInterim = ''; }
+      }, 1200);
+    }
+  };
+
+  recognition.onend = () => { if (isRecording) recognition.start(); };
+  recognition.onerror = (e) => { if (e.error !== 'no-speech') setStatus('', 'エラー: '+e.error); };
+  recognition.start();
+}
+
+function stopRecording() {
+  isRecording = false;
+  if (recognition) recognition.stop();
+  document.getElementById('micBtn').className = 'mic-btn';
+  document.getElementById('micBtn').innerHTML = '🎤 録音開始';
+  setStatus('ready', '待機中');
+}
+
+// Google STT
+async function startGoogleSTT() {
+  try {
+    const constraints = selectedMicId ? { audio: { deviceId: { exact: selectedMicId } } } : { audio: true };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    isRecording = true;
+    document.getElementById('micBtn').className = 'mic-btn recording';
+    document.getElementById('micBtn').textContent = '⏹ 録音停止';
+    setStatus('recording', '録音中 (Google STT)...');
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioCtx.createAnalyser();
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    analyser.fftSize = 512;
+    const dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+    const SILENCE_THRESHOLD = 12;
+    const SILENCE_DURATION = 900;
+    const MAX_DURATION = 10000;
+    let silenceTimer = null;
+    let isSpeaking = false;
+    let currentRecorder = null;
+    let currentChunks = [];
+    let chunkStart = Date.now();
+
+    function startChunk() {
+      currentChunks = [];
+      currentRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      currentRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
+      currentRecorder.onstop = async () => {
+        const blob = new Blob(currentChunks, { type: 'audio/webm;codecs=opus' });
+        currentChunks = [];
+        if (blob.size > 1500) {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64 = reader.result.split(',')[1];
+            await sendSpeech(base64);
+          };
+          reader.readAsDataURL(blob);
+        }
+        if (isRecording) { chunkStart = Date.now(); isSpeaking = false; startChunk(); }
+      };
+      currentRecorder.start(100);
+      chunkStart = Date.now();
+    }
+
+    function checkSilence() {
+      if (!isRecording) return;
+      analyser.getByteFrequencyData(dataArr);
+      const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
+      const elapsed = Date.now() - chunkStart;
+      if (avg > SILENCE_THRESHOLD) {
+        isSpeaking = true;
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      } else if (isSpeaking && !silenceTimer) {
+        silenceTimer = setTimeout(() => {
+          silenceTimer = null;
+          if (isRecording && currentRecorder?.state === 'recording') currentRecorder.stop();
+        }, SILENCE_DURATION);
+      }
+      if (elapsed > MAX_DURATION && currentRecorder?.state === 'recording') {
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        currentRecorder.stop();
+      }
+      requestAnimationFrame(checkSilence);
+    }
+
+    window._gSTT = { stop: () => { if (currentRecorder?.state==='recording') currentRecorder.stop(); stream.getTracks().forEach(t=>t.stop()); audioCtx.close(); } };
+    startChunk();
+    checkSilence();
+  } catch(err) { setStatus('', 'マイクエラー: '+err.message); }
+}
+
+async function sendSpeech(base64) {
+  try {
+    const res = await fetch(`${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: googleApiKey, audio: base64, lang: 'ja-JP' })
+    });
+    const data = await res.json();
+    if (data.results?.length > 0) {
+      const text = data.results.map(r => r.alternatives[0].transcript).join('');
+      if (text.trim()) showTranscript(text, false);
+    }
+  } catch(err) { console.error('Google STT error:', err); }
+}
+
+function stopGoogleSTT() {
+  isRecording = false;
+  if (window._gSTT) { window._gSTT.stop(); window._gSTT = null; }
+  document.getElementById('micBtn').className = 'mic-btn';
+  document.getElementById('micBtn').innerHTML = '🎤 録音開始';
+  setStatus('ready', '待機中');
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function init() {
+  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
+  if (googleApiKey) document.getElementById('googleKeyInput').value = googleApiKey;
+  updateSTTLabel();
+  renderCats();
+  renderDict();
+  if (contextText) document.getElementById('ctxTextarea').value = contextText;
+  loadMicList();
+  connectWS();
+}
+
+init();
+</script>
+</body>
+</html>
