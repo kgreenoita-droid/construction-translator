@@ -187,11 +187,11 @@ function toggleLang(code, checked) {
 // WebSocket
 function connectWS() {
   const host = location.hostname || '127.0.0.1';
-  ws = new WebSocket(`(() => {
+  ws = new WebSocket((() => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const port = location.port ? `:${location.port}` : '';
     return `${proto}//${location.hostname}${port}/ws`;
-  })()`);
+  })());
   ws.onopen = () => {
     document.getElementById('wsDot').className = 'ws-dot connected';
     document.getElementById('wsText').textContent = '講師PCと接続済み';
