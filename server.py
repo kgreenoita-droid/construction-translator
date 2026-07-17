@@ -6,7 +6,34 @@ import urllib.error
 import aiohttp
 from aiohttp import web
 
+# WebSocket接続管理
 ws_clients = set()
+
+# サーバー側設定保存（メモリ）
+server_settings = {
+    'dict': [],
+    'context': ''
+}
+
+# 設定ファイルのパス
+SETTINGS_FILE = 'settings.json'
+
+def load_settings():
+    global server_settings
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                server_settings = json.load(f)
+            print(f'設定読み込み完了: 辞書{len(server_settings.get("dict",[]))}件')
+    except Exception as e:
+        print(f'設定読み込みエラー: {e}')
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(server_settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f'設定保存エラー: {e}')
 
 async def ws_handler(request):
     ws = web.WebSocketResponse()
@@ -28,6 +55,41 @@ async def ws_handler(request):
         ws_clients.discard(ws)
         print(f'WS切断 残り{len(ws_clients)}台')
     return ws
+
+async def get_settings_handler(request):
+    return web.Response(
+        body=json.dumps(server_settings, ensure_ascii=False).encode('utf-8'),
+        headers={
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        }
+    )
+
+async def post_settings_handler(request):
+    global server_settings
+    try:
+        data = await request.json()
+        if 'dict' in data:
+            server_settings['dict'] = data['dict']
+        if 'context' in data:
+            server_settings['context'] = data['context']
+        save_settings()
+        return web.Response(
+            body=json.dumps({'status': 'ok'}).encode(),
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
+    except Exception as e:
+        return web.Response(
+            status=500,
+            body=json.dumps({'error': str(e)}).encode(),
+            headers={
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
 
 async def api_handler(request):
     data = await request.json()
@@ -148,8 +210,13 @@ async def static_handler(request):
     except FileNotFoundError:
         raise web.HTTPNotFound()
 
+# 起動時に設定を読み込み
+load_settings()
+
 app = web.Application()
 app.router.add_get('/ws', ws_handler)
+app.router.add_get('/settings', get_settings_handler)
+app.router.add_post('/settings', post_settings_handler)
 app.router.add_post('/api', api_handler)
 app.router.add_post('/speech', speech_handler)
 app.router.add_route('OPTIONS', '/{path_info:.*}', options_handler)

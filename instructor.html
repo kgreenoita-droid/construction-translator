@@ -433,12 +433,14 @@ function addDict() {
   document.getElementById('dictWrong').value = '';
   document.getElementById('dictCorrect').value = '';
   renderDict();
+  saveServerSettings();
 }
 
 function delDict(i) {
   userDict.splice(i, 1);
   localStorage.setItem('ins_dict', JSON.stringify(userDict));
   renderDict();
+  saveServerSettings();
 }
 
 function renderDict() {
@@ -456,6 +458,7 @@ function saveCtx() {
   const s = document.getElementById('ctxStatus');
   s.textContent = `✓ 保存（${contextText.length}文字）`;
   setTimeout(() => { s.textContent = ''; }, 3000);
+  saveServerSettings();
 }
 
 function clearCtx() {
@@ -667,6 +670,8 @@ function init() {
   if (contextText) document.getElementById('ctxTextarea').value = contextText;
   loadMicList();
   connectWS();
+  // サーバーから設定を読み込み（ローカルより優先）
+  loadServerSettings();
 }
 
 init();
