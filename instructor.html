@@ -580,7 +580,7 @@ async function startGoogleSTT() {
     const dataArr = new Uint8Array(analyser.frequencyBinCount);
 
     const SILENCE_THRESHOLD = 12;
-    const SILENCE_DURATION = 900;
+    const SILENCE_DURATION = 700;
     const MAX_DURATION = 10000;
     let silenceTimer = null;
     let isSpeaking = false;
