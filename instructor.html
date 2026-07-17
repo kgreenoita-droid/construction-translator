@@ -661,6 +661,48 @@ function stopGoogleSTT() {
 
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+
+// サーバーURL取得
+function getServerUrl(path) {
+  const proto = location.protocol;
+  const host = location.hostname;
+  const port = location.port ? ':' + location.port : '';
+  return `${proto}//${host}${port}${path}`;
+}
+
+// サーバーから設定を読み込み
+async function loadServerSettings() {
+  try {
+    const res = await fetch(getServerUrl('/settings'));
+    const data = await res.json();
+    if (data.dict && data.dict.length > 0) {
+      userDict = data.dict;
+      renderDict();
+    }
+    if (data.context) {
+      contextText = data.context;
+      const el = document.getElementById('ctxTextarea');
+      if (el) el.value = contextText;
+    }
+    console.log('サーバー設定読み込み完了');
+  } catch(e) {
+    console.log('サーバー設定読み込みエラー:', e);
+  }
+}
+
+// サーバーに設定を保存
+async function saveServerSettings() {
+  try {
+    await fetch(getServerUrl('/settings'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dict: userDict, context: contextText })
+    });
+  } catch(e) {
+    console.log('サーバー設定保存エラー:', e);
+  }
+}
+
 function init() {
   if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
   if (googleApiKey) document.getElementById('googleKeyInput').value = googleApiKey;
