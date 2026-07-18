@@ -346,11 +346,62 @@ function changeMic(id) {
 }
 
 // 録音制御
+
+// Web Speech API（仮表示用・Google STTと並行動作）
+let interimRecognition = null;
+
+function startInterimRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  
+  interimRecognition = new SR();
+  interimRecognition.lang = 'ja-JP';
+  interimRecognition.continuous = true;
+  interimRecognition.interimResults = true;
+  interimRecognition.maxAlternatives = 1;
+
+  interimRecognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
+    }
+    if (interim) {
+      // Google STTが確定していない間だけ仮表示
+      const box = document.getElementById('transcriptBox');
+      if (box && !box.dataset.confirmed) {
+        box.innerHTML = `<span class="transcript-interim">⚡ ${esc(interim)}</span>`;
+      }
+    }
+  };
+
+  interimRecognition.onerror = () => {};
+  interimRecognition.onend = () => {
+    if (isRecording && googleApiKey) {
+      try { interimRecognition.start(); } catch(e) {}
+    }
+  };
+
+  try { interimRecognition.start(); } catch(e) {}
+}
+
+function stopInterimRecognition() {
+  if (interimRecognition) {
+    try { interimRecognition.stop(); } catch(e) {}
+    interimRecognition = null;
+  }
+}
+
 function toggleRecording() {
   if (isRecording) {
+    stopInterimRecognition();
     if (googleApiKey) stopGoogleSTT(); else stopRecording();
   } else {
-    if (googleApiKey) startGoogleSTT(); else startRecording();
+    if (googleApiKey) {
+      startGoogleSTT();
+      startInterimRecognition(); // 仮表示用Web Speech APIを並行起動
+    } else {
+      startRecording();
+    }
   }
 }
 
@@ -364,8 +415,11 @@ function showTranscript(text, isInterim) {
   const box = document.getElementById('transcriptBox');
   if (isInterim) {
     box.innerHTML = `<span class="transcript-interim">${esc(text)}</span>`;
+    box.dataset.confirmed = '';
   } else {
     box.innerHTML = esc(text);
+    box.dataset.confirmed = 'true'; // 確定済みフラグ（仮表示を上書きしない）
+    setTimeout(() => { if (box) box.dataset.confirmed = ''; }, 2000); // 2秒後に解除
     document.getElementById('manualInput').value = text;
     // 受講者へ送信
     const corrected = applyDict(text);
@@ -653,6 +707,7 @@ async function sendSpeech(base64) {
 
 function stopGoogleSTT() {
   isRecording = false;
+  stopInterimRecognition();
   if (window._gSTT) { window._gSTT.stop(); window._gSTT = null; }
   document.getElementById('micBtn').className = 'mic-btn';
   document.getElementById('micBtn').innerHTML = '🎤 録音開始';
