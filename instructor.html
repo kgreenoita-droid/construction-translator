@@ -354,34 +354,43 @@ function startInterimRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
   
-  interimRecognition = new SR();
-  interimRecognition.lang = 'ja-JP';
-  interimRecognition.continuous = true;
-  interimRecognition.interimResults = true;
-  interimRecognition.maxAlternatives = 1;
+  try {
+    interimRecognition = new SR();
+    interimRecognition.lang = 'ja-JP';
+    interimRecognition.continuous = true;
+    interimRecognition.interimResults = true;
+    interimRecognition.maxAlternatives = 1;
 
-  interimRecognition.onresult = (e) => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
-    }
-    if (interim) {
-      // Google STTが確定していない間だけ仮表示
-      const box = document.getElementById('transcriptBox');
-      if (box && !box.dataset.confirmed) {
-        box.innerHTML = `<span class="transcript-interim">⚡ ${esc(interim)}</span>`;
+    interimRecognition.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
       }
-    }
-  };
+      if (interim) {
+        const box = document.getElementById('transcriptBox');
+        if (box && !box.dataset.confirmed) {
+          box.innerHTML = `<span class="transcript-interim">⚡ ${esc(interim)}</span>`;
+        }
+      }
+    };
 
-  interimRecognition.onerror = () => {};
-  interimRecognition.onend = () => {
-    if (isRecording && googleApiKey) {
-      try { interimRecognition.start(); } catch(e) {}
-    }
-  };
+    interimRecognition.onerror = (e) => {
+      // マイク競合エラーは無視
+      console.log('Interim recognition error (ignored):', e.error);
+    };
 
-  try { interimRecognition.start(); } catch(e) {}
+    interimRecognition.onend = () => {
+      if (isRecording && googleApiKey && interimRecognition) {
+        setTimeout(() => {
+          try { interimRecognition.start(); } catch(e) {}
+        }, 500);
+      }
+    };
+
+    interimRecognition.start();
+  } catch(e) {
+    console.log('Interim recognition start failed (ignored):', e);
+  }
 }
 
 function stopInterimRecognition() {
@@ -398,7 +407,10 @@ function toggleRecording() {
   } else {
     if (googleApiKey) {
       startGoogleSTT();
-      startInterimRecognition(); // 仮表示用Web Speech APIを並行起動
+      // Google STTがマイクを取得してから少し遅らせてWeb Speech APIを起動
+      setTimeout(() => {
+        if (isRecording) startInterimRecognition();
+      }, 1000);
     } else {
       startRecording();
     }
