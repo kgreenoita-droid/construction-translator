@@ -398,7 +398,7 @@ async function startAssemblyAI() {
     // AssemblyAI WebSocket接続（実際のサンプルレートを使用）
     const langCodes = encodeURIComponent('["ja"]');
     aaiWs = new WebSocket(
-      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-3-5-pro&encoding=pcm_s16le&sample_rate=${actualSampleRate}&language_codes=${langCodes}&continuous_partials=true&interruption_delay=0&mode=balanced`
+      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-3-5-pro&encoding=pcm_s16le&sample_rate=${actualSampleRate}&language_codes=${langCodes}&continuous_partials=true&interruption_delay=0&mode=min_latency`
     );
     aaiWs.binaryType = 'arraybuffer';
 
@@ -446,7 +446,7 @@ async function startAssemblyAI() {
 
       // PCMデータをバッファリング（最低50ms分まとめて送る）
       let pcmBuffer = new Int16Array(0);
-      const CHUNK_SAMPLES = aaiAudioCtx.sampleRate * 0.1; // 100ms分
+      const CHUNK_SAMPLES = aaiAudioCtx.sampleRate * 0.05; // 50ms分
 
       aaiProcessor.port.onmessage = (e) => {
         const newData = new Int16Array(e.data);
