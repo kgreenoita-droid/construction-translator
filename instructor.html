@@ -388,8 +388,10 @@ async function startAssemblyAI() {
     aaiStream = await navigator.mediaDevices.getUserMedia(constraints);
 
     // AssemblyAI WebSocket接続（v3 API・ogg_opus使用）
+    // universal-3-5-pro: 日本語対応・リアルタイム表示・連続Partial
+    const langCodes = encodeURIComponent('["ja"]');
     aaiWs = new WebSocket(
-      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-streaming-multilingual&encoding=ogg_opus&language_detection=true`
+      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-3-5-pro&encoding=ogg_opus&language_codes=${langCodes}&continuous_partials=true&interruption_delay=0&mode=balanced`
     );
 
     aaiWs.binaryType = 'arraybuffer';
