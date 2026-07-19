@@ -347,29 +347,59 @@ function changeMic(id) {
 
 // 録音制御
 
-// 録音中アニメーション表示
-let recordingAnimTimer = null;
-let recordingDots = 0;
+// Web Speech API（仮表示専用）
+let interimRecognition = null;
 
-function startRecordingAnim() {
-  const box = document.getElementById('transcriptBox');
-  recordingAnimTimer = setInterval(() => {
-    if (!box || box.dataset.confirmed) return;
-    recordingDots = (recordingDots + 1) % 4;
-    const dots = '●'.repeat(recordingDots + 1) + '○'.repeat(3 - recordingDots);
-    box.innerHTML = `<span class="transcript-interim">🎤 認識中... ${dots}</span>`;
-  }, 300);
-}
+function startInterimRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  try {
+    interimRecognition = new SR();
+    interimRecognition.lang = 'ja-JP';
+    interimRecognition.continuous = true;
+    interimRecognition.interimResults = true;
+    interimRecognition.maxAlternatives = 1;
 
-function stopRecordingAnim() {
-  if (recordingAnimTimer) {
-    clearInterval(recordingAnimTimer);
-    recordingAnimTimer = null;
+    interimRecognition.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
+      }
+      if (interim) {
+        const box = document.getElementById('transcriptBox');
+        if (box && !box.dataset.confirmed) {
+          box.innerHTML = `<span class="transcript-interim">${esc(interim)}</span>`;
+        }
+      }
+    };
+
+    interimRecognition.onerror = (e) => {
+      console.log('Interim error:', e.error);
+    };
+
+    interimRecognition.onend = () => {
+      if (isRecording && googleApiKey) {
+        setTimeout(() => {
+          try { if (interimRecognition) interimRecognition.start(); } catch(e) {}
+        }, 300);
+      }
+    };
+
+    interimRecognition.start();
+    console.log('Interim recognition started');
+  } catch(e) {
+    console.log('Interim recognition failed:', e);
   }
 }
 
-function startInterimRecognition() { startRecordingAnim(); }
-function stopInterimRecognition() { stopRecordingAnim(); }
+function stopInterimRecognition() {
+  if (interimRecognition) {
+    try { interimRecognition.abort(); } catch(e) {}
+    interimRecognition = null;
+  }
+}
+
+function stopRecordingAnim() {} // 互換性のために残す
 
 function toggleRecording() {
   if (isRecording) {
@@ -377,8 +407,7 @@ function toggleRecording() {
     if (googleApiKey) stopGoogleSTT(); else stopRecording();
   } else {
     if (googleApiKey) {
-      startGoogleSTT();
-      startInterimRecognition();
+      startGoogleSTT(); // 内部でstartInterimRecognitionを呼ぶ
     } else {
       startRecording();
     }
@@ -397,7 +426,6 @@ function showTranscript(text, isInterim) {
     box.innerHTML = `<span class="transcript-interim">${esc(text)}</span>`;
     box.dataset.confirmed = '';
   } else {
-    stopRecordingAnim();
     box.innerHTML = esc(text);
     box.dataset.confirmed = 'true';
     setTimeout(() => { if (box) box.dataset.confirmed = ''; }, 1500);
@@ -607,6 +635,9 @@ async function startGoogleSTT() {
     document.getElementById('micBtn').className = 'mic-btn recording';
     document.getElementById('micBtn').textContent = '⏹ 録音停止';
     setStatus('recording', '録音中 (Google STT)...');
+
+    // マイク確保後にWeb Speech APIを起動（仮表示用）
+    setTimeout(() => { if (isRecording) startInterimRecognition(); }, 500);
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = audioCtx.createAnalyser();
