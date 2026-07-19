@@ -353,43 +353,50 @@ let interimRecognition = null;
 function startInterimRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
-  try {
-    interimRecognition = new SR();
-    interimRecognition.lang = 'ja-JP';
-    interimRecognition.continuous = true;
-    interimRecognition.interimResults = true;
-    interimRecognition.maxAlternatives = 1;
 
-    interimRecognition.onresult = (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
-      }
-      if (interim) {
-        const box = document.getElementById('transcriptBox');
-        if (box && !box.dataset.confirmed) {
-          box.innerHTML = `<span class="transcript-interim">${esc(interim)}</span>`;
+  function createAndStart() {
+    if (!isRecording || !googleApiKey) return;
+    try {
+      interimRecognition = new SR();
+      interimRecognition.lang = 'ja-JP';
+      interimRecognition.continuous = true;
+      interimRecognition.interimResults = true;
+      interimRecognition.maxAlternatives = 1;
+
+      interimRecognition.onresult = (e) => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
         }
-      }
-    };
+        if (interim) {
+          const box = document.getElementById('transcriptBox');
+          if (box && !box.dataset.confirmed) {
+            box.innerHTML = `<span class="transcript-interim">${esc(interim)}</span>`;
+          }
+        }
+      };
 
-    interimRecognition.onerror = (e) => {
-      console.log('Interim error:', e.error);
-    };
+      interimRecognition.onerror = (e) => {
+        // no-speech は無視、その他は少し待って再起動
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          setTimeout(() => createAndStart(), 500);
+        }
+      };
 
-    interimRecognition.onend = () => {
-      if (isRecording && googleApiKey) {
-        setTimeout(() => {
-          try { if (interimRecognition) interimRecognition.start(); } catch(e) {}
-        }, 300);
-      }
-    };
+      interimRecognition.onend = () => {
+        // 終了したら即再起動（途切れを防ぐ）
+        if (isRecording && googleApiKey) {
+          setTimeout(() => createAndStart(), 100);
+        }
+      };
 
-    interimRecognition.start();
-    console.log('Interim recognition started');
-  } catch(e) {
-    console.log('Interim recognition failed:', e);
+      interimRecognition.start();
+    } catch(e) {
+      setTimeout(() => createAndStart(), 500);
+    }
   }
+
+  createAndStart();
 }
 
 function stopInterimRecognition() {
@@ -646,7 +653,7 @@ async function startGoogleSTT() {
     const dataArr = new Uint8Array(analyser.frequencyBinCount);
 
     const SILENCE_THRESHOLD = 12;
-    const SILENCE_DURATION = 700;
+    const SILENCE_DURATION = 1200;
     const MAX_DURATION = 10000;
     let silenceTimer = null;
     let isSpeaking = false;
