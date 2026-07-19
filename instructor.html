@@ -141,10 +141,16 @@
       <span style="font-size:12px;color:var(--text2)">Anthropic Key:</span>
       <input type="password" class="api-input" id="apiKeyInput" placeholder="sk-ant-..." />
       <button class="save-btn" onclick="saveApiKey()">保存</button>
+      <span style="font-size:12px;color:var(--text2)">AssemblyAI Key:</span>
+      <input type="password" class="api-input" id="assemblyaiKeyInput" placeholder="AssemblyAI..." />
+      <button class="save-btn" onclick="saveAssemblyAIKey()">保存</button>
+      <span class="mode-label" id="sttModeLabel">🎤 標準モード</span>
+    </div>
+    <div class="control-row" style="margin-top:6px;">
       <span style="font-size:12px;color:var(--text2)">Google STT:</span>
       <input type="password" class="api-input" id="googleKeyInput" placeholder="AIza..." />
       <button class="save-btn" onclick="saveGoogleKey()">保存</button>
-      <span class="mode-label" id="sttModeLabel">🎤 標準モード</span>
+      <span style="font-size:11px;color:var(--text2)">（AssemblyAIがない場合のみ使用）</span>
     </div>
   </div>
 
@@ -238,6 +244,7 @@ const CATEGORY_CONTEXT = {
 
 // 状態
 let apiKey = localStorage.getItem('ins_api_key') || '';
+let assemblyaiKey = localStorage.getItem('ins_assemblyai_key') || '';
 let googleApiKey = localStorage.getItem('ins_google_key') || '';
 let selectedMicId = localStorage.getItem('ins_mic_id') || '';
 let selectedCategory = 'general';
@@ -308,10 +315,25 @@ function saveGoogleKey() {
   flashBtn(event.target, '✓ 保存済み');
 }
 
+function saveAssemblyAIKey() {
+  assemblyaiKey = document.getElementById('assemblyaiKeyInput').value.trim();
+  localStorage.setItem('ins_assemblyai_key', assemblyaiKey);
+  updateSTTLabel();
+  flashBtn(event.target, '✓ 保存済み');
+}
+
 function updateSTTLabel() {
   const el = document.getElementById('sttModeLabel');
-  el.textContent = googleApiKey ? '🚀 Google STTモード' : '🎤 標準モード';
-  el.className = 'mode-label' + (googleApiKey ? ' active' : '');
+  if (assemblyaiKey) {
+    el.textContent = '⚡ AssemblyAI リアルタイムモード';
+    el.className = 'mode-label active';
+  } else if (googleApiKey) {
+    el.textContent = '🚀 Google STTモード';
+    el.className = 'mode-label active';
+  } else {
+    el.textContent = '🎤 標準モード';
+    el.className = 'mode-label';
+  }
 }
 
 function flashBtn(btn, text) {
@@ -347,77 +369,109 @@ function changeMic(id) {
 
 // 録音制御
 
-// Web Speech API（仮表示専用）
-let interimRecognition = null;
+// AssemblyAI リアルタイムストリーミング認識
+let aaiWs = null;
+let aaiAudioCtx = null;
+let aaiProcessor = null;
+let aaiStream = null;
 
-function startInterimRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
+async function startAssemblyAI() {
+  try {
+    // サーバーから一時トークンを取得
+    const tokenUrl = `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/assemblyai-token`;
+    const res = await fetch(tokenUrl);
+    const data = await res.json();
+    if (!data.token) throw new Error('トークン取得失敗');
 
-  function createAndStart() {
-    if (!isRecording || !googleApiKey) return;
-    try {
-      interimRecognition = new SR();
-      interimRecognition.lang = 'ja-JP';
-      interimRecognition.continuous = true;
-      interimRecognition.interimResults = true;
-      interimRecognition.maxAlternatives = 1;
+    // マイク取得
+    const constraints = selectedMicId ? { audio: { deviceId: { exact: selectedMicId } } } : { audio: true };
+    aaiStream = await navigator.mediaDevices.getUserMedia(constraints);
 
-      interimRecognition.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
+    isRecording = true;
+    document.getElementById('micBtn').className = 'mic-btn recording';
+    document.getElementById('micBtn').textContent = '⏹ 録音停止';
+    setStatus('recording', '録音中 (リアルタイム)...');
+    document.getElementById('infoBar').style.display = 'none';
+
+    // AssemblyAI WebSocket接続
+    aaiWs = new WebSocket(
+      `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${data.token}`
+    );
+
+    aaiWs.onopen = () => {
+      console.log('AssemblyAI接続完了');
+
+      // AudioContextでPCM音声を取得
+      aaiAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const source = aaiAudioCtx.createMediaStreamSource(aaiStream);
+      aaiProcessor = aaiAudioCtx.createScriptProcessor(4096, 1, 1);
+
+      source.connect(aaiProcessor);
+      aaiProcessor.connect(aaiAudioCtx.destination);
+
+      aaiProcessor.onaudioprocess = (e) => {
+        if (!aaiWs || aaiWs.readyState !== WebSocket.OPEN) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        // float32 → int16 PCMに変換
+        const pcm = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          pcm[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
         }
-        if (interim) {
-          const box = document.getElementById('transcriptBox');
-          if (box && !box.dataset.confirmed) {
-            box.innerHTML = `<span class="transcript-interim">${esc(interim)}</span>`;
-          }
-        }
+        aaiWs.send(pcm.buffer);
       };
+    };
 
-      interimRecognition.onerror = (e) => {
-        // no-speech は無視、その他は少し待って再起動
-        if (e.error !== 'no-speech' && e.error !== 'aborted') {
-          setTimeout(() => createAndStart(), 500);
-        }
-      };
+    aaiWs.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.message_type === 'PartialTranscript' && msg.text) {
+        // 仮認識：リアルタイム表示
+        showTranscript(msg.text, true);
+      } else if (msg.message_type === 'FinalTranscript' && msg.text) {
+        // 確定：翻訳へ
+        const corrected = applyDict(msg.text);
+        showTranscript(corrected, false);
+        sendToAudience(corrected);
+      }
+    };
 
-      interimRecognition.onend = () => {
-        // 終了したら即再起動（途切れを防ぐ）
-        if (isRecording && googleApiKey) {
-          setTimeout(() => createAndStart(), 100);
-        }
-      };
+    aaiWs.onerror = (e) => {
+      console.error('AssemblyAI WS error:', e);
+      setStatus('', 'エラー');
+    };
 
-      interimRecognition.start();
-    } catch(e) {
-      setTimeout(() => createAndStart(), 500);
-    }
+    aaiWs.onclose = () => {
+      if (isRecording) {
+        // 切断されたら少し待って再接続
+        setTimeout(() => { if (isRecording) startAssemblyAI(); }, 1000);
+      }
+    };
+
+  } catch(err) {
+    console.error('AssemblyAI起動エラー:', err);
+    setStatus('', 'エラー: ' + err.message);
+    isRecording = false;
+    document.getElementById('micBtn').className = 'mic-btn';
+    document.getElementById('micBtn').innerHTML = '🎤 録音開始';
   }
-
-  createAndStart();
 }
 
-function stopInterimRecognition() {
-  if (interimRecognition) {
-    try { interimRecognition.abort(); } catch(e) {}
-    interimRecognition = null;
-  }
+function stopAssemblyAI() {
+  isRecording = false;
+  if (aaiProcessor) { aaiProcessor.disconnect(); aaiProcessor = null; }
+  if (aaiAudioCtx) { aaiAudioCtx.close(); aaiAudioCtx = null; }
+  if (aaiWs) { aaiWs.close(); aaiWs = null; }
+  if (aaiStream) { aaiStream.getTracks().forEach(t => t.stop()); aaiStream = null; }
+  document.getElementById('micBtn').className = 'mic-btn';
+  document.getElementById('micBtn').innerHTML = '🎤 録音開始';
+  setStatus('ready', '待機中');
 }
-
-function stopRecordingAnim() {} // 互換性のために残す
 
 function toggleRecording() {
   if (isRecording) {
-    stopInterimRecognition();
     if (googleApiKey) stopGoogleSTT(); else stopRecording();
   } else {
-    if (googleApiKey) {
-      startGoogleSTT(); // 内部でstartInterimRecognitionを呼ぶ
-    } else {
-      startRecording();
-    }
+    if (googleApiKey) startGoogleSTT();
+    else startRecording();
   }
 }
 
@@ -431,11 +485,8 @@ function showTranscript(text, isInterim) {
   const box = document.getElementById('transcriptBox');
   if (isInterim) {
     box.innerHTML = `<span class="transcript-interim">${esc(text)}</span>`;
-    box.dataset.confirmed = '';
   } else {
     box.innerHTML = esc(text);
-    box.dataset.confirmed = 'true';
-    setTimeout(() => { if (box) box.dataset.confirmed = ''; }, 1500);
     document.getElementById('manualInput').value = text;
     // 受講者へ送信
     const corrected = applyDict(text);
@@ -643,9 +694,6 @@ async function startGoogleSTT() {
     document.getElementById('micBtn').textContent = '⏹ 録音停止';
     setStatus('recording', '録音中 (Google STT)...');
 
-    // マイク確保後にWeb Speech APIを起動（仮表示用）
-    setTimeout(() => { if (isRecording) startInterimRecognition(); }, 500);
-
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = audioCtx.createAnalyser();
     audioCtx.createMediaStreamSource(stream).connect(analyser);
@@ -726,7 +774,6 @@ async function sendSpeech(base64) {
 
 function stopGoogleSTT() {
   isRecording = false;
-  stopInterimRecognition();
   if (window._gSTT) { window._gSTT.stop(); window._gSTT = null; }
   document.getElementById('micBtn').className = 'mic-btn';
   document.getElementById('micBtn').innerHTML = '🎤 録音開始';
@@ -780,6 +827,7 @@ async function saveServerSettings() {
 function init() {
   if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
   if (googleApiKey) document.getElementById('googleKeyInput').value = googleApiKey;
+  if (assemblyaiKey) document.getElementById('assemblyaiKeyInput').value = assemblyaiKey;
   updateSTTLabel();
   renderCats();
   renderDict();

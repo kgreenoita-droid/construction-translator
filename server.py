@@ -214,11 +214,44 @@ async def static_handler(request):
 load_settings()
 
 app = web.Application()
+
+async def assemblyai_token_handler(request):
+    api_key = os.environ.get('ASSEMBLYAI_API_KEY', '')
+    if not api_key:
+        return web.Response(
+            status=400,
+            body=json.dumps({'error': 'ASSEMBLYAI_API_KEY not set'}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+        )
+    try:
+        req = urllib.request.Request(
+            'https://api.assemblyai.com/v2/realtime/token',
+            data=json.dumps({'expires_in': 3600}).encode(),
+            headers={
+                'Authorization': api_key,
+                'Content-Type': 'application/json'
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req) as res:
+            result = json.loads(res.read())
+        return web.Response(
+            body=json.dumps({'token': result['token']}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+        )
+    except Exception as e:
+        return web.Response(
+            status=500,
+            body=json.dumps({'error': str(e)}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+        )
+
 app.router.add_get('/ws', ws_handler)
 app.router.add_get('/settings', get_settings_handler)
 app.router.add_post('/settings', post_settings_handler)
 app.router.add_post('/api', api_handler)
 app.router.add_post('/speech', speech_handler)
+app.router.add_get('/assemblyai-token', assemblyai_token_handler)
 app.router.add_route('OPTIONS', '/{path_info:.*}', options_handler)
 app.router.add_get('/', lambda r: web.HTTPFound('/instructor.html'))
 app.router.add_get('/{filename}', static_handler)
