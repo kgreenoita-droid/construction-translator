@@ -393,9 +393,9 @@ async function startAssemblyAI() {
     setStatus('recording', '録音中 (リアルタイム)...');
     document.getElementById('infoBar').style.display = 'none';
 
-    // AssemblyAI WebSocket接続
+    // AssemblyAI WebSocket接続（v3 API）
     aaiWs = new WebSocket(
-      `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${data.token}`
+      `wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&token=${data.token}&speech_model=universal`
     );
 
     aaiWs.onopen = () => {
@@ -423,11 +423,24 @@ async function startAssemblyAI() {
 
     aaiWs.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-      if (msg.message_type === 'PartialTranscript' && msg.text) {
-        // 仮認識：リアルタイム表示
+      // v3 API: Turn イベント
+      if (msg.type === 'Turn') {
+        if (msg.transcript) {
+          if (msg.end_of_turn) {
+            // 確定：翻訳へ
+            const corrected = applyDict(msg.transcript);
+            showTranscript(corrected, false);
+            sendToAudience(corrected);
+          } else {
+            // 仮認識：リアルタイム表示
+            showTranscript(msg.transcript, true);
+          }
+        }
+      }
+      // v2 互換（念のため）
+      else if (msg.message_type === 'PartialTranscript' && msg.text) {
         showTranscript(msg.text, true);
       } else if (msg.message_type === 'FinalTranscript' && msg.text) {
-        // 確定：翻訳へ
         const corrected = applyDict(msg.text);
         showTranscript(corrected, false);
         sendToAudience(corrected);

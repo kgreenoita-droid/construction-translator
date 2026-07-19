@@ -224,9 +224,10 @@ async def assemblyai_token_handler(request):
             headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         )
     try:
+        # v3 API token endpoint
         req = urllib.request.Request(
-            'https://api.assemblyai.com/v2/realtime/token',
-            data=json.dumps({'expires_in': 3600}).encode(),
+            'https://api.assemblyai.com/v3/streaming/token',
+            data=json.dumps({'expires_in_seconds': 3600}).encode(),
             headers={
                 'Authorization': api_key,
                 'Content-Type': 'application/json'
@@ -240,6 +241,7 @@ async def assemblyai_token_handler(request):
             headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         )
     except Exception as e:
+        print(f'AssemblyAI token error: {e}')
         return web.Response(
             status=500,
             body=json.dumps({'error': str(e)}).encode(),
