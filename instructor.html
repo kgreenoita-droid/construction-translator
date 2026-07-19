@@ -383,21 +383,21 @@ async function startAssemblyAI() {
     const data = await res.json();
     if (!data.token) throw new Error('トークン取得失敗: ' + JSON.stringify(data));
 
-    // マイク取得
-    const constraints = selectedMicId ? { audio: { deviceId: { exact: selectedMicId } } } : { audio: true };
+    // マイク取得（16kHz PCM用）
+    const constraints = selectedMicId
+      ? { audio: { deviceId: { exact: selectedMicId }, sampleRate: 16000, channelCount: 1 } }
+      : { audio: { sampleRate: 16000, channelCount: 1 } };
     aaiStream = await navigator.mediaDevices.getUserMedia(constraints);
 
-    // AssemblyAI WebSocket接続（v3 API・ogg_opus使用）
-    // universal-3-5-pro: 日本語対応・リアルタイム表示・連続Partial
+    // AssemblyAI WebSocket接続（PCM 16bit）
     const langCodes = encodeURIComponent('["ja"]');
     aaiWs = new WebSocket(
-      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-3-5-pro&encoding=ogg_opus&language_codes=${langCodes}&continuous_partials=true&interruption_delay=0&mode=balanced`
+      `wss://streaming.assemblyai.com/v3/ws?token=${data.token}&speech_model=universal-3-5-pro&encoding=pcm_s16le&sample_rate=16000&language_codes=${langCodes}&continuous_partials=true&interruption_delay=0&mode=balanced`
     );
-
     aaiWs.binaryType = 'arraybuffer';
 
-    aaiWs.onopen = () => {
-      console.log('AssemblyAI接続完了');
+    aaiWs.onopen = async () => {
+      console.log('AssemblyAI PCM接続完了');
       isRecording = true;
       document.getElementById('micBtn').className = 'mic-btn recording';
       document.getElementById('micBtn').textContent = '⏹ 録音停止';
@@ -405,31 +405,64 @@ async function startAssemblyAI() {
       const infoBar = document.getElementById('infoBar');
       if (infoBar) infoBar.style.display = 'none';
 
-      // MediaRecorderでogg_opusとして録音・送信
-      aaiProcessor = new MediaRecorder(aaiStream, { mimeType: 'audio/webm;codecs=opus' });
-      aaiProcessor.ondataavailable = (e) => {
-        if (e.data.size > 0 && aaiWs && aaiWs.readyState === WebSocket.OPEN) {
+      // AudioWorkletで高精度PCMキャプチャ
+      aaiAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+      // AudioWorkletプロセッサをBlobURLで定義
+      const processorCode = `
+        class PCMProcessor extends AudioWorkletProcessor {
+          process(inputs) {
+            const input = inputs[0];
+            if (input && input[0] && input[0].length > 0) {
+              const float32 = input[0];
+              const int16 = new Int16Array(float32.length);
+              for (let i = 0; i < float32.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32[i]));
+                int16[i] = s < 0 ? s * 32768 : s * 32767;
+              }
+              this.port.postMessage(int16.buffer, [int16.buffer]);
+            }
+            return true;
+          }
+        }
+        registerProcessor('pcm-processor', PCMProcessor);
+      `;
+      const blob = new Blob([processorCode], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      await aaiAudioCtx.audioWorklet.addModule(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+
+      const source = aaiAudioCtx.createMediaStreamSource(aaiStream);
+      aaiProcessor = new AudioWorkletNode(aaiAudioCtx, 'pcm-processor');
+
+      aaiProcessor.port.onmessage = (e) => {
+        if (aaiWs && aaiWs.readyState === WebSocket.OPEN) {
           aaiWs.send(e.data);
         }
       };
-      aaiProcessor.start(100); // 100msごとに送信
+
+      source.connect(aaiProcessor);
+      aaiProcessor.connect(aaiAudioCtx.destination);
     };
 
     aaiWs.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        console.log('AAI:', msg.type, msg.transcript || '');
         if (msg.type === 'Turn' && msg.transcript) {
           if (msg.end_of_turn) {
             const corrected = applyDict(msg.transcript);
             showTranscript(corrected, false);
             sendToAudience(corrected);
           } else {
+            // リアルタイム仮表示
             showTranscript(msg.transcript, true);
           }
+        } else if (msg.type === 'Begin') {
+          console.log('セッション開始:', msg.configuration);
         }
       } catch(err) {
-        console.log('AAI message parse error:', err);
+        console.log('AAI parse error:', err);
       }
     };
 
@@ -456,12 +489,11 @@ async function startAssemblyAI() {
 
 function stopAssemblyAI() {
   isRecording = false;
-  if (aaiProcessor && aaiProcessor.state === 'recording') { aaiProcessor.stop(); }
-  aaiProcessor = null;
+  if (aaiProcessor) { aaiProcessor.disconnect(); aaiProcessor = null; }
   if (aaiAudioCtx) { aaiAudioCtx.close(); aaiAudioCtx = null; }
   if (aaiWs) {
     try { aaiWs.send(JSON.stringify({ type: 'Terminate' })); } catch(e) {}
-    aaiWs.close(); aaiWs = null;
+    setTimeout(() => { if (aaiWs) { aaiWs.close(); aaiWs = null; } }, 200);
   }
   if (aaiStream) { aaiStream.getTracks().forEach(t => t.stop()); aaiStream = null; }
   document.getElementById('micBtn').className = 'mic-btn';
