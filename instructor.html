@@ -444,9 +444,24 @@ async function startAssemblyAI() {
       const source = aaiAudioCtx.createMediaStreamSource(aaiStream);
       aaiProcessor = new AudioWorkletNode(aaiAudioCtx, 'pcm-processor');
 
+      // PCMデータをバッファリング（最低50ms分まとめて送る）
+      let pcmBuffer = new Int16Array(0);
+      const CHUNK_SAMPLES = aaiAudioCtx.sampleRate * 0.1; // 100ms分
+
       aaiProcessor.port.onmessage = (e) => {
-        if (aaiWs && aaiWs.readyState === WebSocket.OPEN) {
-          aaiWs.send(e.data);
+        const newData = new Int16Array(e.data);
+        const combined = new Int16Array(pcmBuffer.length + newData.length);
+        combined.set(pcmBuffer);
+        combined.set(newData, pcmBuffer.length);
+        pcmBuffer = combined;
+
+        // 100ms分たまったら送信
+        while (pcmBuffer.length >= CHUNK_SAMPLES) {
+          const chunk = pcmBuffer.slice(0, CHUNK_SAMPLES);
+          pcmBuffer = pcmBuffer.slice(CHUNK_SAMPLES);
+          if (aaiWs && aaiWs.readyState === WebSocket.OPEN) {
+            aaiWs.send(chunk.buffer);
+          }
         }
       };
 
