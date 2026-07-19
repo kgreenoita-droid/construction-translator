@@ -347,58 +347,29 @@ function changeMic(id) {
 
 // 録音制御
 
-// Web Speech API（仮表示用・Google STTと並行動作）
-let interimRecognition = null;
+// 録音中アニメーション表示
+let recordingAnimTimer = null;
+let recordingDots = 0;
 
-function startInterimRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
-  
-  try {
-    interimRecognition = new SR();
-    interimRecognition.lang = 'ja-JP';
-    interimRecognition.continuous = true;
-    interimRecognition.interimResults = true;
-    interimRecognition.maxAlternatives = 1;
+function startRecordingAnim() {
+  const box = document.getElementById('transcriptBox');
+  recordingAnimTimer = setInterval(() => {
+    if (!box || box.dataset.confirmed) return;
+    recordingDots = (recordingDots + 1) % 4;
+    const dots = '●'.repeat(recordingDots + 1) + '○'.repeat(3 - recordingDots);
+    box.innerHTML = `<span class="transcript-interim">🎤 認識中... ${dots}</span>`;
+  }, 300);
+}
 
-    interimRecognition.onresult = (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
-      }
-      if (interim) {
-        const box = document.getElementById('transcriptBox');
-        if (box && !box.dataset.confirmed) {
-          box.innerHTML = `<span class="transcript-interim">⚡ ${esc(interim)}</span>`;
-        }
-      }
-    };
-
-    interimRecognition.onerror = (e) => {
-      // マイク競合エラーは無視
-      console.log('Interim recognition error (ignored):', e.error);
-    };
-
-    interimRecognition.onend = () => {
-      if (isRecording && googleApiKey && interimRecognition) {
-        setTimeout(() => {
-          try { interimRecognition.start(); } catch(e) {}
-        }, 500);
-      }
-    };
-
-    interimRecognition.start();
-  } catch(e) {
-    console.log('Interim recognition start failed (ignored):', e);
+function stopRecordingAnim() {
+  if (recordingAnimTimer) {
+    clearInterval(recordingAnimTimer);
+    recordingAnimTimer = null;
   }
 }
 
-function stopInterimRecognition() {
-  if (interimRecognition) {
-    try { interimRecognition.stop(); } catch(e) {}
-    interimRecognition = null;
-  }
-}
+function startInterimRecognition() { startRecordingAnim(); }
+function stopInterimRecognition() { stopRecordingAnim(); }
 
 function toggleRecording() {
   if (isRecording) {
@@ -407,10 +378,7 @@ function toggleRecording() {
   } else {
     if (googleApiKey) {
       startGoogleSTT();
-      // Google STTがマイクを取得してから少し遅らせてWeb Speech APIを起動
-      setTimeout(() => {
-        if (isRecording) startInterimRecognition();
-      }, 1000);
+      startInterimRecognition();
     } else {
       startRecording();
     }
@@ -429,9 +397,10 @@ function showTranscript(text, isInterim) {
     box.innerHTML = `<span class="transcript-interim">${esc(text)}</span>`;
     box.dataset.confirmed = '';
   } else {
+    stopRecordingAnim();
     box.innerHTML = esc(text);
-    box.dataset.confirmed = 'true'; // 確定済みフラグ（仮表示を上書きしない）
-    setTimeout(() => { if (box) box.dataset.confirmed = ''; }, 2000); // 2秒後に解除
+    box.dataset.confirmed = 'true';
+    setTimeout(() => { if (box) box.dataset.confirmed = ''; }, 1500);
     document.getElementById('manualInput').value = text;
     // 受講者へ送信
     const corrected = applyDict(text);
