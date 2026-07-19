@@ -503,9 +503,12 @@ function stopAssemblyAI() {
 
 function toggleRecording() {
   if (isRecording) {
-    if (googleApiKey) stopGoogleSTT(); else stopRecording();
+    if (assemblyaiKey) stopAssemblyAI();
+    else if (googleApiKey) stopGoogleSTT();
+    else stopRecording();
   } else {
-    if (googleApiKey) startGoogleSTT();
+    if (assemblyaiKey) startAssemblyAI();
+    else if (googleApiKey) startGoogleSTT();
     else startRecording();
   }
 }
