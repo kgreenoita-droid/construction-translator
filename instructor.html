@@ -391,7 +391,7 @@ async function startAssemblyAI() {
     document.getElementById('micBtn').className = 'mic-btn recording';
     document.getElementById('micBtn').textContent = '⏹ 録音停止';
     setStatus('recording', '録音中 (リアルタイム)...');
-    document.getElementById('infoBar').style.display = 'none';
+    const infoBar = document.getElementById('infoBar'); if (infoBar) infoBar.style.display = 'none';
 
     // AssemblyAI WebSocket接続（v3 API）
     aaiWs = new WebSocket(
