@@ -224,15 +224,13 @@ async def assemblyai_token_handler(request):
             headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         )
     try:
-        # v3 API token endpoint
+        # v3 API token endpoint (GET with query params)
         req = urllib.request.Request(
-            'https://api.assemblyai.com/v3/streaming/token',
-            data=json.dumps({'expires_in_seconds': 3600}).encode(),
+            'https://streaming.assemblyai.com/v3/token?expires_in_seconds=600',
             headers={
                 'Authorization': api_key,
-                'Content-Type': 'application/json'
             },
-            method='POST'
+            method='GET'
         )
         with urllib.request.urlopen(req) as res:
             result = json.loads(res.read())
