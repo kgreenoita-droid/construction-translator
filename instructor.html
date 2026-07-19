@@ -475,8 +475,7 @@ async function startAssemblyAI() {
         if (msg.type === 'Turn' && msg.transcript) {
           if (msg.end_of_turn) {
             const corrected = applyDict(msg.transcript);
-            showTranscript(corrected, false);
-            sendToAudience(corrected);
+            showTranscript(corrected, false); // 内部でsendToAudienceを呼ぶ
           } else {
             // リアルタイム仮表示
             showTranscript(msg.transcript, true);
