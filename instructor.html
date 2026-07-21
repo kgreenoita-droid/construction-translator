@@ -495,14 +495,16 @@ async function startAssemblyAI() {
 
     aaiWs.onclose = (e) => {
       console.log('AssemblyAI WS closed:', e.code, e.reason);
-      // エラーの場合は再接続しない（トークン消費を防ぐ）
-      if (e.code === 1000 || e.code === 1001) {
-        // 正常終了の場合のみ再接続
-        if (isRecording) setTimeout(() => { if (isRecording) startAssemblyAI(); }, 2000);
-      } else {
-        // エラーの場合は停止
+      // 自動再接続するコード
+      const autoReconnectCodes = [1000, 1001, 1005, 1006];
+      if (autoReconnectCodes.includes(e.code) && isRecording) {
+        console.log('自動再接続中...');
+        setStatus('recording', '再接続中...');
+        setTimeout(() => { if (isRecording) startAssemblyAI(); }, 1500);
+      } else if (isRecording) {
+        // その他のエラーは停止
         console.error('AssemblyAI接続エラー code:', e.code, 'reason:', e.reason);
-        setStatus('', 'エラー: ' + e.code + ' - ' + e.reason);
+        setStatus('', 'エラー: ' + e.code);
         isRecording = false;
         document.getElementById('micBtn').className = 'mic-btn';
         document.getElementById('micBtn').innerHTML = '🎤 録音開始';
