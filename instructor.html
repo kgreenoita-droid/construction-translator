@@ -253,6 +253,7 @@ let contextText = localStorage.getItem('ins_context') || '';
 let isRecording = false;
 let sentLog = [];
 let ws = null;
+let lastSentId = null; // 最後に送信した翻訳のID
 
 // WebSocket接続
 function connectWS() {
@@ -565,11 +566,15 @@ function showTranscript(text, isInterim) {
   }
 }
 
-function sendToAudience(text) {
+function sendToAudience(text, overwriteId = null) {
+  const id = overwriteId || Date.now().toString();
+  lastSentId = id;
   const context = CATEGORY_CONTEXT[selectedCategory] || '';
   const catName = CATEGORIES.find(c => c.id === selectedCategory)?.label || '';
   sendWS({
     type: 'transcript',
+    id,
+    overwrite: !!overwriteId,
     text,
     category: selectedCategory,
     catName,
@@ -583,7 +588,27 @@ function sendToAudience(text) {
 function sendManual() {
   const text = document.getElementById('manualInput').value.trim();
   if (!text) return;
-  showTranscript(text, false);
+  // lastSentIdがある場合は上書き送信
+  const overwriteId = lastSentId;
+  lastSentId = null;
+  const context = CATEGORY_CONTEXT[selectedCategory] || '';
+  const catName = CATEGORIES.find(c => c.id === selectedCategory)?.label || '';
+  const id = overwriteId || Date.now().toString();
+  lastSentId = id;
+  sendWS({
+    type: 'transcript',
+    id,
+    overwrite: !!overwriteId,
+    text,
+    category: selectedCategory,
+    catName,
+    context,
+    contextText: contextText.slice(0, 2000),
+    apiKey,
+  });
+  // 講師側の表示も更新
+  document.getElementById('transcriptBox').innerHTML = esc(text);
+  addSentLog(text + (overwriteId ? '（修正）' : ''));
 }
 
 function clearManual() {

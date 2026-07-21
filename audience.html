@@ -66,10 +66,11 @@
   .ja-interim { font-size: 22px; font-weight: 700; color: #333; font-style: italic; }
 
   /* 翻訳履歴 */
-  .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
-  .history-list::-webkit-scrollbar { width: 4px; }
-  .history-list::-webkit-scrollbar-track { background: #111; }
-  .history-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 10px 0; min-height: 0; }
+  .history-list::-webkit-scrollbar { width: 6px; }
+  .history-list::-webkit-scrollbar-track { background: #0a0a0a; }
+  .history-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .history-list::-webkit-scrollbar-thumb:hover { background: #666; }
 
   .hist-item {
     background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
@@ -226,6 +227,8 @@ function connectWS() {
 
 async function handleTranscript(data) {
   const text = data.text;
+  const id = data.id || Date.now().toString();
+  const isOverwrite = data.overwrite || false;
   currentContext = data.context || '';
   currentContextText = data.contextText || '';
   const apiKeyToUse = data.apiKey || apiKey;
@@ -233,10 +236,24 @@ async function handleTranscript(data) {
   // 日本語表示
   document.getElementById('jaText').innerHTML = esc(text);
 
-  // 履歴に追加
-  const entry = { ja: text, translations: {}, loading: true };
-  history.unshift(entry);
-  if (history.length > MAX_HISTORY) history.pop();
+  let entry;
+  if (isOverwrite) {
+    // 既存エントリを上書き（同じIDを探す）
+    const existingIdx = history.findIndex(h => h.id === id);
+    if (existingIdx >= 0) {
+      entry = { id, ja: text, translations: {}, loading: true };
+      history[existingIdx] = entry;
+    } else {
+      entry = { id, ja: text, translations: {}, loading: true };
+      history.unshift(entry);
+      if (history.length > MAX_HISTORY) history.pop();
+    }
+  } else {
+    // 新規追加
+    entry = { id, ja: text, translations: {}, loading: true };
+    history.unshift(entry);
+    if (history.length > MAX_HISTORY) history.pop();
+  }
   renderHistory();
 
   // 翻訳
@@ -328,6 +345,7 @@ function renderHistory() {
     return;
   }
   const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  const wasAtTop = list.scrollTop < 50;
   list.innerHTML = history.map((item, idx) => {
     const isLatest = idx === 0;
     const langRows = langs.map(lang => {
@@ -345,6 +363,10 @@ function renderHistory() {
       <div class="hist-langs">${langRows}</div>
     </div>`;
   }).join('');
+  // 新しいコンテンツが来たらトップにスクロール
+  if (wasAtTop || true) {
+    list.scrollTop = 0;
+  }
 }
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
