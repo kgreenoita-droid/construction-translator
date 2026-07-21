@@ -225,8 +225,10 @@ async def assemblyai_token_handler(request):
         )
     try:
         # v3 API token endpoint (GET with query params)
+        # expires_in_seconds: 1-600秒（トークン有効期限）
+        # max_session_duration_seconds: 最大10800秒（セッション継続時間）
         req = urllib.request.Request(
-            'https://streaming.assemblyai.com/v3/token?expires_in_seconds=3600',
+            'https://streaming.assemblyai.com/v3/token?expires_in_seconds=600&max_session_duration_seconds=10800',
             headers={
                 'Authorization': api_key,
             },
