@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>講師用 - 建設技能講習 通訳システム</title>
+<title>講師用 - 多言語通訳システム</title>
 <style>
   :root {
     --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -106,7 +106,7 @@
 <header>
   <div class="header-icon">🏗️</div>
   <div>
-    <h1>建設技能講習 通訳システム</h1>
+    <h1>多言語通訳システム</h1>
     <p>講師用コントロールパネル</p>
   </div>
   <span class="header-badge">👨‍🏫 講師モード</span>
@@ -227,6 +227,8 @@ const CATEGORIES = [
   {id:'vehicle', label:'🚜 車両系建設機械'}, {id:'kouso', label:'🪜 高所作業車'},
   {id:'forklift', label:'🏭 フォークリフト'}, {id:'crane', label:'🏗️ 小型クレーン'},
   {id:'ashiba', label:'🧱 足場'}, {id:'harness', label:'🦺 フルハーネス'},
+  {id:'legal', label:'⚖️ 法的講習'}, {id:'police', label:'🚔 警察講習'},
+  {id:'fire', label:'🚒 消防講習'},
 ];
 
 const CATEGORY_CONTEXT = {
@@ -240,6 +242,9 @@ const CATEGORY_CONTEXT = {
   crane:'移動式クレーン（定格荷重、作業半径、ブーム長、アウトリガー、過負荷防止、巻過防止、玉掛け）',
   ashiba:'足場（単管足場、枠組足場、手すり、幅木、足場板、壁つなぎ、筋交、養生シート）',
   harness:'フルハーネス（ランヤード、フック、D環、落下距離、ショックアブソーバー、作業前点検、廃棄基準）',
+  legal:'法的講習・法令関連（労働安全衛生法、労働基準法、コンプライアンス、ハラスメント防止、個人情報保護、就業規則、権利義務）',
+  police:'警察講習・防犯安全（不審者対応、緊急連絡、事故報告、交通安全、防犯対策、警察連携、法的手続き）',
+  fire:'消防講習・防災安全（火災予防、消火器使用、避難誘導、防火管理、緊急対応、救急処置、防災設備）',
 };
 
 // 状態
@@ -384,11 +389,23 @@ async function startAssemblyAI() {
     const data = await res.json();
     if (!data.token) throw new Error('トークン取得失敗: ' + JSON.stringify(data));
 
-    // マイク取得
-    const constraints = selectedMicId
-      ? { audio: { deviceId: { exact: selectedMicId } } }
-      : { audio: true };
-    aaiStream = await navigator.mediaDevices.getUserMedia(constraints);
+    // マイク取得（selectedMicIdが使えない場合はデフォルトにフォールバック）
+    let aaiStreamLocal;
+    if (selectedMicId) {
+      try {
+        aaiStreamLocal = await navigator.mediaDevices.getUserMedia(
+          { audio: { deviceId: { exact: selectedMicId } } }
+        );
+      } catch(e) {
+        console.log('指定マイク取得失敗、デフォルトマイクを使用:', e.name);
+        aaiStreamLocal = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // マイクリストを更新
+        loadMicList();
+      }
+    } else {
+      aaiStreamLocal = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+    aaiStream = aaiStreamLocal;
 
     // 実際のサンプルレートを確認してAssemblyAIに伝える
     const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
