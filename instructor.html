@@ -100,6 +100,10 @@
 
   .audience-link { background: #1a2535; border: 1px solid #3a6ea8; color: #7db8f0; border-radius: 8px; padding: 10px 14px; font-size: 13px; text-align: center; }
   .audience-link a { color: #7db8f0; font-weight: 700; }
+
+  .noise-control { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+  .noise-slider { width: 100px; accent-color: var(--accent); cursor: pointer; }
+  .noise-value { font-size: 11px; color: var(--text2); min-width: 70px; }
 </style>
 </head>
 <body>
@@ -132,6 +136,11 @@
       <select class="mic-select" id="micSelect" onchange="changeMic(this.value)">
         <option value="">🎤 マイク選択中...</option>
       </select>
+      <div class="noise-control">
+        <span>🔇 感度:</span>
+        <input type="range" class="noise-slider" id="noiseSlider" min="0" max="50" value="8" oninput="updateNoiseThreshold(this.value)">
+        <span class="noise-value" id="noiseLabel">標準 (8)</span>
+      </div>
       <div class="status-row">
         <div class="status-dot" id="statusDot"></div>
         <span class="status-text" id="statusText">待機中</span>
@@ -468,12 +477,18 @@ async function startAssemblyAI() {
 
       aaiProcessor.port.onmessage = (e) => {
         const newData = new Int16Array(e.data);
+
+        // 音量チェック（しきい値以下はスキップ）
+        const rms = Math.sqrt(newData.reduce((sum, v) => sum + v * v, 0) / newData.length);
+        const volumeLevel = rms / 327; // 0〜100スケール
+        if (volumeLevel < noiseThreshold) return; // 小さい音は無視
+
         const combined = new Int16Array(pcmBuffer.length + newData.length);
         combined.set(pcmBuffer);
         combined.set(newData, pcmBuffer.length);
         pcmBuffer = combined;
 
-        // 100ms分たまったら送信
+        // 50ms分たまったら送信
         while (pcmBuffer.length >= CHUNK_SAMPLES) {
           const chunk = pcmBuffer.slice(0, CHUNK_SAMPLES);
           pcmBuffer = pcmBuffer.slice(CHUNK_SAMPLES);
@@ -896,6 +911,20 @@ function stopGoogleSTT() {
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 
+
+// 音量しきい値（周囲の声を拾いすぎる場合に上げる）
+let noiseThreshold = parseInt(localStorage.getItem('ins_noise_threshold') || '8');
+
+function updateNoiseThreshold(val) {
+  noiseThreshold = parseInt(val);
+  localStorage.setItem('ins_noise_threshold', val);
+  const label = document.getElementById('noiseLabel');
+  if (val <= 5) label.textContent = `高感度 (${val})`;
+  else if (val <= 15) label.textContent = `標準 (${val})`;
+  else if (val <= 30) label.textContent = `低感度 (${val})`;
+  else label.textContent = `最低感度 (${val})`;
+}
+
 // サーバーURL取得
 function getServerUrl(path) {
   const proto = location.protocol;
@@ -940,6 +969,9 @@ async function saveServerSettings() {
 function init() {
   if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
   if (googleApiKey) document.getElementById('googleKeyInput').value = googleApiKey;
+  // 音量しきい値を復元
+  document.getElementById('noiseSlider').value = noiseThreshold;
+  updateNoiseThreshold(noiseThreshold);
   if (assemblyaiKey) document.getElementById('assemblyaiKeyInput').value = assemblyaiKey;
   updateSTTLabel();
   renderCats();
