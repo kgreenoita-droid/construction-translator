@@ -102,7 +102,8 @@
 <!-- 設定パネル（開閉可能） -->
 <div id="settingsPanel" style="display:none">
   <div class="api-bar">
-    <span class="api-label" id="apiStatusText" style="color:#444">⏳ 講師PCからAPIキーを受信待ち...</span>
+    <span class="api-label" id="apiStatusText" style="color:#3fb950">⏳ 講師PCからAPIキーを受信待ち...</span>
+    <input type="password" class="api-input" id="apiKeyInput" placeholder="手動入力（任意）" style="display:none" />
   </div>
   <div class="lang-bar">
     <span class="lang-bar-label">表示言語（最大3つ）：</span>
@@ -369,7 +370,6 @@ function toggleSettings() {
 }
 
 function init() {
-  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
   renderLangChips();
   connectWS();
 }
