@@ -99,18 +99,15 @@
   <button class="settings-toggle-btn" onclick="toggleSettings()" title="設定を開閉">⚙️</button>
 </header>
 
-<!-- APIキー設定 -->
-<div class="api-bar">
-  <span class="api-label">Anthropic API Key:</span>
-  <input type="password" class="api-input" id="apiKeyInput" placeholder="sk-ant-..." />
-  <button class="api-save-btn" onclick="saveApiKey()">保存</button>
-  <span style="font-size:11px;color:#444">※ このページで翻訳するため必要です</span>
-</div>
-
-<!-- 言語選択バー -->
-<div class="lang-bar">
-  <span class="lang-bar-label">表示言語（最大3つ）：</span>
-  <div id="langChips" style="display:flex;gap:6px;flex-wrap:nowrap;"></div>
+<!-- 設定パネル（開閉可能） -->
+<div id="settingsPanel" style="display:none">
+  <div class="api-bar">
+    <span class="api-label" id="apiStatusText" style="color:#444">⏳ 講師PCからAPIキーを受信待ち...</span>
+  </div>
+  <div class="lang-bar">
+    <span class="lang-bar-label">表示言語（最大3つ）：</span>
+    <div id="langChips" style="display:flex;gap:6px;flex-wrap:nowrap;"></div>
+  </div>
 </div>
 
 <div class="content">
