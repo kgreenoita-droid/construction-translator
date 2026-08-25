@@ -476,12 +476,17 @@ async function startAssemblyAI() {
       const CHUNK_SAMPLES = aaiAudioCtx.sampleRate * 0.05; // 50ms分
 
       aaiProcessor.port.onmessage = (e) => {
-        const newData = new Int16Array(e.data);
+        let newData = new Int16Array(e.data);
 
-        // 音量チェック（しきい値以下はスキップ）
-        const rms = Math.sqrt(newData.reduce((sum, v) => sum + v * v, 0) / newData.length);
-        const volumeLevel = rms / 327; // 0〜100スケール
-        if (volumeLevel < noiseThreshold) return; // 小さい音は無視
+        // 音量チェック（しきい値以下は無音化するが送信は継続）
+        // ※ストリーミングの連続性を保つため、スキップせずゼロdata化する
+        if (noiseThreshold > 0) {
+          const rms = Math.sqrt(newData.reduce((sum, v) => sum + v * v, 0) / newData.length);
+          const volumeLevel = rms / 327;
+          if (volumeLevel < noiseThreshold) {
+            newData = new Int16Array(newData.length); // 無音（ゼロ）に置き換え
+          }
+        }
 
         const combined = new Int16Array(pcmBuffer.length + newData.length);
         combined.set(pcmBuffer);
