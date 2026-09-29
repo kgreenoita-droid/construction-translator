@@ -350,6 +350,7 @@ async def chirp_ws_handler(request):
         return ws
 
     sample_rate = int(request.query.get('sample_rate', '16000'))
+    print(f'[Chirp] 受信サンプルレート: {sample_rate}', flush=True)
     loop = asyncio.get_event_loop()
     audio_q = queue.Queue()
     stop_flag = threading.Event()
