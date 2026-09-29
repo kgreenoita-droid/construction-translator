@@ -104,6 +104,8 @@
   .noise-control { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
   .noise-slider { width: 100px; accent-color: var(--accent); cursor: pointer; }
   .noise-value { font-size: 11px; color: var(--text2); min-width: 70px; }
+  .engine-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.2s; }
+  .engine-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -154,6 +156,11 @@
       <input type="password" class="api-input" id="assemblyaiKeyInput" placeholder="AssemblyAI..." />
       <button class="save-btn" onclick="saveAssemblyAIKey()">保存</button>
       <span class="mode-label" id="sttModeLabel">🎤 標準モード</span>
+    </div>
+    <div class="control-row" style="margin-top:6px;">
+      <span style="font-size:12px;color:var(--text2)">認識エンジン:</span>
+      <button class="engine-btn active" id="engineChirp" onclick="switchEngine('chirp')">🌟 Chirp 3（高精度）</button>
+      <button class="engine-btn" id="engineAai" onclick="switchEngine('assemblyai')">⚡ AssemblyAI</button>
     </div>
     <div class="control-row" style="margin-top:6px;">
       <span style="font-size:12px;color:var(--text2)">Google STT:</span>
@@ -260,6 +267,9 @@ const CATEGORY_CONTEXT = {
 let apiKey = localStorage.getItem('ins_api_key') || '';
 let assemblyaiKey = localStorage.getItem('ins_assemblyai_key') || '';
 let googleApiKey = localStorage.getItem('ins_google_key') || '';
+let passphrase = localStorage.getItem('app_passphrase') || '';
+let serverConfig = { anthropic:false, google:false, assemblyai:false, chirp:false, passphrase_required:false };
+let sttEngine = localStorage.getItem('ins_stt_engine') || 'chirp'; // 'chirp' or 'assemblyai'
 let selectedMicId = localStorage.getItem('ins_mic_id') || '';
 let selectedCategory = 'general';
 let userDict = JSON.parse(localStorage.getItem('ins_dict') || '[]');
@@ -319,8 +329,13 @@ function saveApiKey() {
 }
 
 function broadcastSettings() {
-  if (!apiKey) return;
-  sendWS({ type: 'settings', apiKey });
+  if (serverConfig.anthropic) {
+    // サーバーキー使用時：合言葉とサーバーキーフラグを配信
+    sendWS({ type: 'settings', useServerKey: true, passphrase: passphrase });
+  } else if (apiKey && apiKey !== 'server') {
+    // クライアントキー使用時
+    sendWS({ type: 'settings', apiKey });
+  }
 }
 
 function saveGoogleKey() {
@@ -339,8 +354,11 @@ function saveAssemblyAIKey() {
 
 function updateSTTLabel() {
   const el = document.getElementById('sttModeLabel');
-  if (assemblyaiKey) {
-    el.textContent = '⚡ AssemblyAI リアルタイムモード';
+  if (sttEngine === 'chirp' && serverConfig.chirp) {
+    el.textContent = '🌟 Chirp 3 (高精度日本語)';
+    el.className = 'mode-label active';
+  } else if (assemblyaiKey) {
+    el.textContent = '⚡ AssemblyAI モード';
     el.className = 'mode-label active';
   } else if (googleApiKey) {
     el.textContent = '🚀 Google STTモード';
@@ -349,6 +367,23 @@ function updateSTTLabel() {
     el.textContent = '🎤 標準モード';
     el.className = 'mode-label';
   }
+  // エンジン切替ボタンの表示更新
+  const chirpBtn = document.getElementById('engineChirp');
+  const aaiBtn = document.getElementById('engineAai');
+  if (chirpBtn && aaiBtn) {
+    chirpBtn.className = 'engine-btn' + (sttEngine === 'chirp' ? ' active' : '');
+    aaiBtn.className = 'engine-btn' + (sttEngine === 'assemblyai' ? ' active' : '');
+  }
+}
+
+function switchEngine(engine) {
+  if (isRecording) {
+    alert('録音を停止してから切り替えてください');
+    return;
+  }
+  sttEngine = engine;
+  localStorage.setItem('ins_stt_engine', engine);
+  updateSTTLabel();
 }
 
 function flashBtn(btn, text) {
@@ -393,7 +428,7 @@ let aaiStream = null;
 async function startAssemblyAI() {
   try {
     // サーバーから一時トークンを取得
-    const tokenUrl = `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/assemblyai-token`;
+    const tokenUrl = `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/assemblyai-token?passphrase=${encodeURIComponent(passphrase)}`;
     const res = await fetch(tokenUrl);
     const data = await res.json();
     if (!data.token) throw new Error('トークン取得失敗: ' + JSON.stringify(data));
@@ -572,13 +607,156 @@ function stopAssemblyAI() {
   setStatus('ready', '待機中');
 }
 
+
+// ===== Chirp 3 ストリーミング認識 =====
+let chirpWs = null;
+let chirpAudioCtx = null;
+let chirpProcessor = null;
+let chirpStream = null;
+
+async function startChirp() {
+  try {
+    // マイク取得（フォールバック付き）
+    let streamLocal;
+    if (selectedMicId) {
+      try {
+        streamLocal = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: selectedMicId } } });
+      } catch(e) {
+        streamLocal = await navigator.mediaDevices.getUserMedia({ audio: true });
+        loadMicList();
+      }
+    } else {
+      streamLocal = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+    chirpStream = streamLocal;
+
+    chirpAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const actualSampleRate = chirpAudioCtx.sampleRate;
+    console.log('Chirp サンプルレート:', actualSampleRate);
+
+    // WebSocket接続（サーバー中継）
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const port = location.port ? ':' + location.port : '';
+    chirpWs = new WebSocket(`${proto}//${location.hostname}${port}/chirp-ws?passphrase=${encodeURIComponent(passphrase)}&sample_rate=${actualSampleRate}`);
+    chirpWs.binaryType = 'arraybuffer';
+
+    chirpWs.onopen = async () => {
+      console.log('Chirp接続完了');
+      isRecording = true;
+      document.getElementById('micBtn').className = 'mic-btn recording';
+      document.getElementById('micBtn').textContent = '⏹ 録音停止';
+      setStatus('recording', '録音中 (Chirp 3)...');
+
+      // AudioWorkletでPCM取得
+      const processorCode = `
+        class PCMProcessor extends AudioWorkletProcessor {
+          process(inputs) {
+            const input = inputs[0];
+            if (input && input[0] && input[0].length > 0) {
+              const f32 = input[0];
+              const i16 = new Int16Array(f32.length);
+              for (let i = 0; i < f32.length; i++) {
+                const s = Math.max(-1, Math.min(1, f32[i]));
+                i16[i] = s < 0 ? s * 32768 : s * 32767;
+              }
+              this.port.postMessage(i16.buffer, [i16.buffer]);
+            }
+            return true;
+          }
+        }
+        registerProcessor('pcm-processor-chirp', PCMProcessor);
+      `;
+      const blob = new Blob([processorCode], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      await chirpAudioCtx.audioWorklet.addModule(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+
+      const source = chirpAudioCtx.createMediaStreamSource(chirpStream);
+      chirpProcessor = new AudioWorkletNode(chirpAudioCtx, 'pcm-processor-chirp');
+
+      // 50msバッファで送信
+      let pcmBuf = new Int16Array(0);
+      const CHUNK = chirpAudioCtx.sampleRate * 0.05;
+      chirpProcessor.port.onmessage = (e) => {
+        let newData = new Int16Array(e.data);
+        // 感度フィルター（AssemblyAIと同じ仕組み）
+        if (noiseThreshold > 0) {
+          const rms = Math.sqrt(newData.reduce((s, v) => s + v * v, 0) / newData.length);
+          if (rms / 327 < noiseThreshold) newData = new Int16Array(newData.length);
+        }
+        const combined = new Int16Array(pcmBuf.length + newData.length);
+        combined.set(pcmBuf); combined.set(newData, pcmBuf.length);
+        pcmBuf = combined;
+        while (pcmBuf.length >= CHUNK) {
+          const chunk = pcmBuf.slice(0, CHUNK);
+          pcmBuf = pcmBuf.slice(CHUNK);
+          if (chirpWs && chirpWs.readyState === WebSocket.OPEN) {
+            chirpWs.send(chunk.buffer);
+          }
+        }
+      };
+      source.connect(chirpProcessor);
+      chirpProcessor.connect(chirpAudioCtx.destination);
+    };
+
+    chirpWs.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'transcript' && msg.transcript) {
+          if (msg.is_final) {
+            const corrected = applyDict(msg.transcript);
+            showTranscript(corrected, false);
+            sendToAudience(corrected);
+          } else {
+            showTranscript(msg.transcript, true);
+          }
+        } else if (msg.type === 'error') {
+          console.error('Chirpエラー:', msg.message);
+          setStatus('', 'エラー: ' + msg.message);
+        }
+      } catch(err) { console.log('Chirp parse error:', err); }
+    };
+
+    chirpWs.onerror = (e) => { console.error('Chirp WS error:', e); };
+    chirpWs.onclose = (e) => {
+      console.log('Chirp WS closed:', e.code);
+      if (isRecording) {
+        setStatus('recording', '再接続中...');
+        setTimeout(() => { if (isRecording) startChirp(); }, 1500);
+      }
+    };
+  } catch(err) {
+    console.error('Chirp起動エラー:', err);
+    setStatus('', 'エラー: ' + err.message);
+    isRecording = false;
+    document.getElementById('micBtn').className = 'mic-btn';
+    document.getElementById('micBtn').innerHTML = '🎤 録音開始';
+  }
+}
+
+function stopChirp() {
+  isRecording = false;
+  if (chirpProcessor) { chirpProcessor.disconnect(); chirpProcessor = null; }
+  if (chirpAudioCtx) { chirpAudioCtx.close(); chirpAudioCtx = null; }
+  if (chirpWs) {
+    try { chirpWs.send('STOP'); } catch(e) {}
+    setTimeout(() => { if (chirpWs) { chirpWs.close(); chirpWs = null; } }, 200);
+  }
+  if (chirpStream) { chirpStream.getTracks().forEach(t => t.stop()); chirpStream = null; }
+  document.getElementById('micBtn').className = 'mic-btn';
+  document.getElementById('micBtn').innerHTML = '🎤 録音開始';
+  setStatus('ready', '待機中');
+}
+
 function toggleRecording() {
   if (isRecording) {
-    if (assemblyaiKey) stopAssemblyAI();
+    if (sttEngine === 'chirp' && serverConfig.chirp) stopChirp();
+    else if (assemblyaiKey) stopAssemblyAI();
     else if (googleApiKey) stopGoogleSTT();
     else stopRecording();
   } else {
-    if (assemblyaiKey) startAssemblyAI();
+    if (sttEngine === 'chirp' && serverConfig.chirp) startChirp();
+    else if (assemblyaiKey) startAssemblyAI();
     else if (googleApiKey) startGoogleSTT();
     else startRecording();
   }
@@ -617,7 +795,9 @@ function sendToAudience(text, overwriteId = null) {
     catName,
     context,
     contextText: contextText.slice(0, 2000),
-    apiKey,
+    apiKey: (apiKey === 'server' ? '' : apiKey),
+    useServerKey: serverConfig.anthropic,
+    passphrase: passphrase,
   });
   addSentLog(text);
 }
@@ -641,7 +821,9 @@ function sendManual() {
     catName,
     context,
     contextText: contextText.slice(0, 2000),
-    apiKey,
+    apiKey: (apiKey === 'server' ? '' : apiKey),
+    useServerKey: serverConfig.anthropic,
+    passphrase: passphrase,
   });
   // 講師側の表示も更新
   document.getElementById('transcriptBox').innerHTML = esc(text);
@@ -895,7 +1077,7 @@ async function sendSpeech(base64) {
     const res = await fetch(`${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/speech`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: googleApiKey, audio: base64, lang: 'ja-JP' })
+      body: JSON.stringify({ api_key: googleApiKey, passphrase: passphrase, audio: base64, lang: 'ja-JP' })
     });
     const data = await res.json();
     if (data.results?.length > 0) {
@@ -971,20 +1153,66 @@ async function saveServerSettings() {
   }
 }
 
-function init() {
-  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
-  if (googleApiKey) document.getElementById('googleKeyInput').value = googleApiKey;
+async function checkServerConfig() {
+  try {
+    const url = `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}/config?passphrase=${encodeURIComponent(passphrase)}`;
+    const res = await fetch(url);
+    if (res.status === 401) return 'unauthorized';
+    serverConfig = await res.json();
+    return 'ok';
+  } catch(e) {
+    console.log('config取得エラー:', e);
+    return 'error';
+  }
+}
+
+async function ensurePassphrase() {
+  // まず現在の合言葉でconfig取得を試す
+  let status = await checkServerConfig();
+  // 合言葉が必要で未認証なら入力を求める
+  while (status === 'unauthorized') {
+    const input = prompt('合言葉を入力してください：');
+    if (input === null) { return false; } // キャンセル
+    passphrase = input.trim();
+    status = await checkServerConfig();
+    if (status === 'ok') {
+      localStorage.setItem('app_passphrase', passphrase);
+    } else if (status === 'unauthorized') {
+      alert('合言葉が違います。もう一度入力してください。');
+    }
+  }
+  return status === 'ok';
+}
+
+async function init() {
+  // 合言葉チェック
+  const authed = await ensurePassphrase();
+  if (!authed) {
+    document.body.innerHTML = '<div style="color:#e6edf3;font-family:sans-serif;padding:40px;text-align:center;font-size:18px;">合言葉が必要です。ページを再読み込みして入力してください。</div>';
+    return;
+  }
+
+  // サーバーにキーがある場合はそれを使う（入力欄は補助）
+  if (serverConfig.anthropic) { apiKey = 'server'; }
+  if (serverConfig.google) { googleApiKey = 'server'; }
+  if (serverConfig.assemblyai) { assemblyaiKey = 'server'; }
+  // Chirpが使えない場合はAssemblyAIにフォールバック
+  if (sttEngine === 'chirp' && !serverConfig.chirp) {
+    sttEngine = serverConfig.assemblyai ? 'assemblyai' : sttEngine;
+  }
+
+  if (apiKey && apiKey !== 'server') document.getElementById('apiKeyInput').value = apiKey;
+  if (googleApiKey && googleApiKey !== 'server') document.getElementById('googleKeyInput').value = googleApiKey;
   // 音量しきい値を復元
   document.getElementById('noiseSlider').value = noiseThreshold;
   updateNoiseThreshold(noiseThreshold);
-  if (assemblyaiKey) document.getElementById('assemblyaiKeyInput').value = assemblyaiKey;
+  if (assemblyaiKey && assemblyaiKey !== 'server') document.getElementById('assemblyaiKeyInput').value = assemblyaiKey;
   updateSTTLabel();
   renderCats();
   renderDict();
   if (contextText) document.getElementById('ctxTextarea').value = contextText;
   loadMicList();
   connectWS();
-  // サーバーから設定を読み込み（ローカルより優先）
   loadServerSettings();
 }
 
