@@ -373,7 +373,7 @@ async def chirp_ws_handler(request):
             ),
         )
         yield cloud_speech.StreamingRecognizeRequest(
-            recognizer=f'projects/{project_id}/locations/global/recognizers/_',
+            recognizer=f'projects/{project_id}/locations/us/recognizers/_',
             streaming_config=streaming_config,
         )
         # 以降は音声チャンク
@@ -388,7 +388,14 @@ async def chirp_ws_handler(request):
 
     def run_stream():
         try:
-            client = speech_v2.SpeechClient(credentials=credentials)
+            from google.api_core import client_options as client_options_lib
+            region = 'us'
+            client = speech_v2.SpeechClient(
+                credentials=credentials,
+                client_options=client_options_lib.ClientOptions(
+                    api_endpoint=f'{region}-speech.googleapis.com'
+                )
+            )
             responses = client.streaming_recognize(requests=audio_generator())
             for response in responses:
                 for result in response.results:
