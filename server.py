@@ -1,10 +1,23 @@
 import asyncio
 import json
 import os
+import base64
+import queue
+import threading
 import urllib.request
 import urllib.error
 import aiohttp
 from aiohttp import web
+
+# Google Cloud Speech (Chirp 3) - 遅延インポート（未インストールでも他機能は動く）
+try:
+    from google.cloud import speech_v2
+    from google.cloud.speech_v2.types import cloud_speech
+    from google.oauth2 import service_account
+    GOOGLE_SPEECH_AVAILABLE = True
+except Exception as _e:
+    GOOGLE_SPEECH_AVAILABLE = False
+    print('google-cloud-speech 未導入:', _e)
 
 # WebSocket接続管理
 ws_clients = set()
@@ -34,6 +47,55 @@ def save_settings():
             json.dump(server_settings, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f'設定保存エラー: {e}')
+
+def check_passphrase(passphrase):
+    # 環境変数APP_PASSPHRASEが未設定なら合言葉チェックをスキップ
+    required = os.environ.get('APP_PASSPHRASE', '')
+    if not required:
+        return True
+    return passphrase == required
+
+# Google Chirp 3 認証情報の読み込み
+_chirp_credentials = None
+_chirp_project_id = None
+
+def get_chirp_credentials():
+    global _chirp_credentials, _chirp_project_id
+    if _chirp_credentials is not None:
+        return _chirp_credentials, _chirp_project_id
+    raw = os.environ.get('GOOGLE_SA_JSON', '')
+    if not raw:
+        return None, None
+    try:
+        info = json.loads(raw)
+        _chirp_credentials = service_account.Credentials.from_service_account_info(info)
+        _chirp_project_id = info.get('project_id')
+        return _chirp_credentials, _chirp_project_id
+    except Exception as e:
+        print('Chirp認証読み込みエラー:', e)
+        return None, None
+
+async def config_handler(request):
+    # クライアントに必要な設定状況を返す（キー自体は返さない）
+    passphrase = request.query.get('passphrase', '')
+    if not check_passphrase(passphrase):
+        return web.Response(status=401, body=json.dumps({'error': 'invalid passphrase'}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
+    result = {
+        'anthropic': bool(os.environ.get('ANTHROPIC_API_KEY', '')),
+        'google': bool(os.environ.get('GOOGLE_STT_API_KEY', '')),
+        'assemblyai': bool(os.environ.get('ASSEMBLYAI_API_KEY', '')),
+        'chirp': bool(os.environ.get('GOOGLE_SA_JSON', '')) and GOOGLE_SPEECH_AVAILABLE,
+        'passphrase_required': bool(os.environ.get('APP_PASSPHRASE', '')),
+    }
+    return web.Response(body=json.dumps(result).encode(),
+        headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
+
+async def verify_passphrase_handler(request):
+    data = await request.json()
+    ok = check_passphrase(data.get('passphrase', ''))
+    return web.Response(body=json.dumps({'ok': ok}).encode(),
+        headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
 
 async def ws_handler(request):
     ws = web.WebSocketResponse()
@@ -93,7 +155,14 @@ async def post_settings_handler(request):
 
 async def api_handler(request):
     data = await request.json()
-    api_key = data.pop('api_key')
+    # 合言葉チェック
+    passphrase = data.pop('passphrase', '')
+    if not check_passphrase(passphrase):
+        return web.Response(status=401, body=json.dumps({'error': 'invalid passphrase'}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
+    # サーバー環境変数のキーを優先、なければクライアントのキー
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '') or data.pop('api_key', '')
+    data.pop('api_key', None)
     is_stream = data.get('stream', False)
     req = urllib.request.Request(
         'https://api.anthropic.com/v1/messages',
@@ -134,7 +203,12 @@ async def api_handler(request):
 
 async def speech_handler(request):
     data = await request.json()
-    api_key = data.pop('api_key')
+    passphrase = data.pop('passphrase', '')
+    if not check_passphrase(passphrase):
+        return web.Response(status=401, body=json.dumps({'error': 'invalid passphrase'}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
+    api_key = os.environ.get('GOOGLE_STT_API_KEY', '') or data.pop('api_key', '')
+    data.pop('api_key', None)
     payload = {
         'config': {
             'encoding': 'WEBM_OPUS',
@@ -216,6 +290,10 @@ load_settings()
 app = web.Application()
 
 async def assemblyai_token_handler(request):
+    passphrase = request.query.get('passphrase', '')
+    if not check_passphrase(passphrase):
+        return web.Response(status=401, body=json.dumps({'error': 'invalid passphrase'}).encode(),
+            headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
     api_key = os.environ.get('ASSEMBLYAI_API_KEY', '')
     if not api_key:
         return web.Response(
@@ -248,12 +326,119 @@ async def assemblyai_token_handler(request):
             headers={'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         )
 
+
+async def chirp_ws_handler(request):
+    """講師ブラウザからのPCM音声をChirp 3ストリーミングに中継"""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    # 合言葉チェック（クエリパラメータ）
+    passphrase = request.query.get('passphrase', '')
+    if not check_passphrase(passphrase):
+        await ws.send_str(json.dumps({'type': 'error', 'message': 'invalid passphrase'}))
+        await ws.close()
+        return ws
+
+    if not GOOGLE_SPEECH_AVAILABLE:
+        await ws.send_str(json.dumps({'type': 'error', 'message': 'google-cloud-speech not installed'}))
+        await ws.close()
+        return ws
+
+    credentials, project_id = get_chirp_credentials()
+    if not credentials:
+        await ws.send_str(json.dumps({'type': 'error', 'message': 'GOOGLE_SA_JSON not set'}))
+        await ws.close()
+        return ws
+
+    sample_rate = int(request.query.get('sample_rate', '16000'))
+    loop = asyncio.get_event_loop()
+    audio_q = queue.Queue()
+    stop_flag = threading.Event()
+
+    def audio_generator():
+        # 最初にconfigを送る
+        recognition_config = cloud_speech.RecognitionConfig(
+            explicit_decoding_config=cloud_speech.ExplicitDecodingConfig(
+                encoding=cloud_speech.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=sample_rate,
+                audio_channel_count=1,
+            ),
+            language_codes=['ja-JP'],
+            model='chirp_3',
+        )
+        streaming_config = cloud_speech.StreamingRecognitionConfig(
+            config=recognition_config,
+            streaming_features=cloud_speech.StreamingRecognitionFeatures(
+                interim_results=True,
+            ),
+        )
+        yield cloud_speech.StreamingRecognizeRequest(
+            recognizer=f'projects/{project_id}/locations/global/recognizers/_',
+            streaming_config=streaming_config,
+        )
+        # 以降は音声チャンク
+        while not stop_flag.is_set():
+            try:
+                chunk = audio_q.get(timeout=1)
+            except queue.Empty:
+                continue
+            if chunk is None:
+                break
+            yield cloud_speech.StreamingRecognizeRequest(audio=chunk)
+
+    def run_stream():
+        try:
+            client = speech_v2.SpeechClient(credentials=credentials)
+            responses = client.streaming_recognize(requests=audio_generator())
+            for response in responses:
+                for result in response.results:
+                    if not result.alternatives:
+                        continue
+                    transcript = result.alternatives[0].transcript
+                    is_final = result.is_final
+                    msg = json.dumps({
+                        'type': 'transcript',
+                        'transcript': transcript,
+                        'is_final': is_final,
+                    })
+                    asyncio.run_coroutine_threadsafe(ws.send_str(msg), loop)
+        except Exception as e:
+            err = json.dumps({'type': 'error', 'message': str(e)})
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_str(err), loop)
+            except:
+                pass
+            print('Chirp stream error:', e)
+
+    stream_thread = threading.Thread(target=run_stream, daemon=True)
+    stream_thread.start()
+    print('Chirp接続開始')
+
+    try:
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.BINARY:
+                audio_q.put(msg.data)
+            elif msg.type == aiohttp.WSMsgType.TEXT:
+                # 終了シグナルなど
+                if msg.data == 'STOP':
+                    break
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                break
+    finally:
+        stop_flag.set()
+        audio_q.put(None)
+        print('Chirp接続終了')
+    return ws
+
 app.router.add_get('/ws', ws_handler)
+app.router.add_get('/chirp-ws', chirp_ws_handler)
 app.router.add_get('/settings', get_settings_handler)
 app.router.add_post('/settings', post_settings_handler)
 app.router.add_post('/api', api_handler)
 app.router.add_post('/speech', speech_handler)
 app.router.add_get('/assemblyai-token', assemblyai_token_handler)
+app.router.add_get('/config', config_handler)
+app.router.add_post('/verify-passphrase', verify_passphrase_handler)
 app.router.add_route('OPTIONS', '/{path_info:.*}', options_handler)
 app.router.add_get('/', lambda r: web.HTTPFound('/instructor.html'))
 app.router.add_get('/{filename}', static_handler)
