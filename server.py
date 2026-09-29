@@ -372,11 +372,13 @@ async def chirp_ws_handler(request):
                 interim_results=True,
             ),
         )
+        print('[Chirp] config送信', flush=True)
         yield cloud_speech.StreamingRecognizeRequest(
             recognizer=f'projects/{project_id}/locations/us/recognizers/_',
             streaming_config=streaming_config,
         )
         # 以降は音声チャンク
+        sent = 0
         while not stop_flag.is_set():
             try:
                 chunk = audio_q.get(timeout=1)
@@ -384,6 +386,9 @@ async def chirp_ws_handler(request):
                 continue
             if chunk is None:
                 break
+            sent += 1
+            if sent % 20 == 1:
+                print(f'[Chirp] 音声送信 {sent}チャンク目', flush=True)
             yield cloud_speech.StreamingRecognizeRequest(audio=chunk)
 
     def run_stream():
@@ -396,8 +401,11 @@ async def chirp_ws_handler(request):
                     api_endpoint=f'{region}-speech.googleapis.com'
                 )
             )
+            print('[Chirp] Googleへstreaming開始', flush=True)
             responses = client.streaming_recognize(requests=audio_generator())
+            print('[Chirp] Google応答待ち', flush=True)
             for response in responses:
+                print(f'[Chirp] 応答受信 results={len(response.results)}', flush=True)
                 for result in response.results:
                     if not result.alternatives:
                         continue
@@ -421,9 +429,13 @@ async def chirp_ws_handler(request):
     stream_thread.start()
     print('Chirp接続開始')
 
+    recv_count = 0
     try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.BINARY:
+                recv_count += 1
+                if recv_count % 20 == 1:
+                    print(f'[Chirp] ブラウザから音声受信 {recv_count}個目', flush=True)
                 audio_q.put(msg.data)
             elif msg.type == aiohttp.WSMsgType.TEXT:
                 # 終了シグナルなど
