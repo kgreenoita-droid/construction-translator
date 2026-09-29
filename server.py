@@ -329,10 +329,9 @@ async def assemblyai_token_handler(request):
 
 async def chirp_ws_handler(request):
     """講師ブラウザからのPCM音声をChirp 3ストリーミングに中継"""
-    ws = web.WebSocketResponse()
+    ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
 
-    # 合言葉チェック（クエリパラメータ）
     passphrase = request.query.get('passphrase', '')
     if not check_passphrase(passphrase):
         await ws.send_str(json.dumps({'type': 'error', 'message': 'invalid passphrase'}))
@@ -355,8 +354,7 @@ async def chirp_ws_handler(request):
     audio_q = queue.Queue()
     stop_flag = threading.Event()
 
-    def audio_generator():
-        # 最初にconfigを送る
+    def request_generator():
         recognition_config = cloud_speech.RecognitionConfig(
             explicit_decoding_config=cloud_speech.ExplicitDecodingConfig(
                 encoding=cloud_speech.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
@@ -372,22 +370,23 @@ async def chirp_ws_handler(request):
                 interim_results=True,
             ),
         )
-        print('[Chirp] config送信', flush=True)
+        # 1) 設定リクエスト
         yield cloud_speech.StreamingRecognizeRequest(
             recognizer=f'projects/{project_id}/locations/us/recognizers/_',
             streaming_config=streaming_config,
         )
-        # 以降は音声チャンク
+        print('[Chirp] config送信', flush=True)
+        # 2) 音声チャンクを流し続ける
         sent = 0
         while not stop_flag.is_set():
             try:
-                chunk = audio_q.get(timeout=1)
+                chunk = audio_q.get(timeout=0.1)
             except queue.Empty:
                 continue
             if chunk is None:
                 break
             sent += 1
-            if sent % 20 == 1:
+            if sent % 40 == 1:
                 print(f'[Chirp] 音声送信 {sent}チャンク目', flush=True)
             yield cloud_speech.StreamingRecognizeRequest(audio=chunk)
 
@@ -402,43 +401,45 @@ async def chirp_ws_handler(request):
                 )
             )
             print('[Chirp] Googleへstreaming開始', flush=True)
-            responses = client.streaming_recognize(requests=audio_generator())
-            print('[Chirp] Google応答待ち', flush=True)
+            responses = client.streaming_recognize(requests=request_generator())
+            print('[Chirp] Google応答ループ入り', flush=True)
             for response in responses:
-                print(f'[Chirp] 応答受信 results={len(response.results)}', flush=True)
                 for result in response.results:
                     if not result.alternatives:
                         continue
                     transcript = result.alternatives[0].transcript
                     is_final = result.is_final
+                    print(f'[Chirp] 応答: final={is_final} "{transcript[:20]}"', flush=True)
                     msg = json.dumps({
                         'type': 'transcript',
                         'transcript': transcript,
                         'is_final': is_final,
                     })
-                    asyncio.run_coroutine_threadsafe(ws.send_str(msg), loop)
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send_str(msg), loop)
+                    except Exception as se:
+                        print('[Chirp] 送信失敗:', se, flush=True)
         except Exception as e:
             err = json.dumps({'type': 'error', 'message': str(e)})
             try:
                 asyncio.run_coroutine_threadsafe(ws.send_str(err), loop)
             except:
                 pass
-            print('Chirp stream error:', e)
+            print('[Chirp] streamエラー:', repr(e), flush=True)
 
     stream_thread = threading.Thread(target=run_stream, daemon=True)
     stream_thread.start()
-    print('Chirp接続開始')
+    print('Chirp接続開始', flush=True)
 
     recv_count = 0
     try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.BINARY:
                 recv_count += 1
-                if recv_count % 20 == 1:
+                if recv_count % 40 == 1:
                     print(f'[Chirp] ブラウザから音声受信 {recv_count}個目', flush=True)
                 audio_q.put(msg.data)
             elif msg.type == aiohttp.WSMsgType.TEXT:
-                # 終了シグナルなど
                 if msg.data == 'STOP':
                     break
             elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -446,7 +447,7 @@ async def chirp_ws_handler(request):
     finally:
         stop_flag.set()
         audio_q.put(None)
-        print('Chirp接続終了')
+        print('Chirp接続終了', flush=True)
     return ws
 
 app.router.add_get('/ws', ws_handler)
