@@ -88,8 +88,8 @@
   </div>
   <div class="bar">
     <span class="bar-label">自動翻訳の待ち時間：</span>
-    <input type="range" id="delaySlider" min="0.4" max="2.5" step="0.1" value="1.0" style="width:160px;accent-color:var(--accent);cursor:pointer;" oninput="updateDelay(this.value)">
-    <span class="bar-label" id="delayLabel" style="color:var(--text)">1.0秒</span>
+    <input type="range" id="delaySlider" min="0.1" max="2.5" step="0.1" value="0.1" style="width:160px;accent-color:var(--accent);cursor:pointer;" oninput="updateDelay(this.value)">
+    <span class="bar-label" id="delayLabel" style="color:var(--text)">0.1秒</span>
     <span class="bar-label" style="margin-left:12px;">※ 入力が止まってからこの時間で自動翻訳</span>
   </div>
 </div>
@@ -133,7 +133,7 @@ let selectedLangs = new Set(JSON.parse(localStorage.getItem('aqua_langs') || '["
 let history = [];
 const MAX_HISTORY = 10;
 let isTranslating = false;
-let autoDelay = parseFloat(localStorage.getItem('aqua_delay') || '1.0'); // 自動翻訳待ち時間（秒）
+let autoDelay = parseFloat(localStorage.getItem('aqua_delay') || '0.1'); // 自動翻訳待ち時間（秒）
 let idleTimer = null;
 let lastInputLen = 0;
 
