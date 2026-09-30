@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aqua Voice 通訳（試作）</title>
+<style>
+  :root {
+    --bg: #000; --bg2: #0d0d0d; --bg3: #111;
+    --border: #222; --text: #eee; --text2: #666;
+    --accent: #f0a500; --success: #3fb950; --danger: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Noto Sans JP','Noto Sans',sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: #080808; border-bottom: 2px solid var(--accent); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .hint { margin-left: auto; font-size: 11px; color: var(--text2); }
+
+  /* 設定バー */
+  .settings-toggle-btn { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 4px 8px; font-size: 14px; cursor: pointer; }
+  .settings-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #settingsPanel { display: none; }
+  .bar { background: #0a0a0a; border-bottom: 1px solid var(--border); padding: 8px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+  .bar-label { font-size: 11px; color: var(--text2); white-space: nowrap; }
+  .api-input { background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 200px; }
+  .api-input::placeholder { color: #444; }
+  .api-save-btn { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+  .lang-chip { display: flex; align-items: center; gap: 4px; background: #111; border: 1px solid #333; border-radius: 16px; padding: 3px 8px; cursor: pointer; user-select: none; font-size: 12px; color: #666; white-space: nowrap; }
+  .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(240,165,0,0.08); }
+  .lang-chip input { display: none; }
+
+  /* メイン */
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 10px; gap: 10px; min-height: 0; }
+
+  .input-area { flex-shrink: 0; }
+  .input-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .input-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .input-status.ready { background: #1a3a1a; color: var(--success); }
+  .input-status.translating { background: #3a2f1a; color: var(--accent); }
+  #jaInput {
+    width: 100%; min-height: 70px; background: #0a0a1a; border: 2px solid #2a2a4a;
+    color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 22px; font-weight: 700;
+    font-family: inherit; line-height: 1.4; resize: none;
+  }
+  #jaInput:focus { outline: none; border-color: var(--accent); }
+  #jaInput::placeholder { color: #333; font-weight: 400; font-size: 16px; }
+
+  .manual-row { display: flex; gap: 8px; margin-top: 6px; }
+  .btn { background: var(--accent); border: none; color: #000; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .btn-sub { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+
+  /* 翻訳履歴 */
+  .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 10px 0; min-height: 0; }
+  .history-list::-webkit-scrollbar { width: 6px; }
+  .history-list::-webkit-scrollbar-track { background: #0a0a0a; }
+  .history-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .hist-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex-shrink: 0; }
+  .hist-item.latest { border-color: var(--accent); background: #0d0d0d; }
+  .hist-ja { font-size: 15px; font-weight: 700; color: #bbb; margin-bottom: 8px; line-height: 1.4; }
+  .hist-lang-row { display: flex; align-items: baseline; gap: 8px; margin-top: 5px; }
+  .hist-flag { font-size: 16px; flex-shrink: 0; }
+  .hist-name { font-size: 11px; color: #444; width: 90px; flex-shrink: 0; }
+  .hist-text { font-size: 22px; color: #fff; line-height: 1.45; }
+  .hist-text.loading { color: #444; font-size: 14px; font-style: italic; }
+  .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎙 Aqua Voice 通訳（試作）</h1>
+  <span class="hint">入力欄にカーソルを置き、Aqua Voiceで音声入力 → 話し終わると自動で翻訳</span>
+  <button class="settings-toggle-btn" onclick="toggleSettings()" title="設定">⚙️</button>
+</header>
+
+<div id="settingsPanel">
+  <div class="bar">
+    <span class="bar-label">Anthropic API Key:</span>
+    <input type="password" class="api-input" id="apiKeyInput" placeholder="sk-ant-..." />
+    <button class="api-save-btn" onclick="saveApiKey()">保存</button>
+    <span class="bar-label" id="keyStatus" style="color:#444"></span>
+  </div>
+  <div class="bar">
+    <span class="bar-label">表示言語（最大3つ）：</span>
+    <div id="langChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+  </div>
+  <div class="bar">
+    <span class="bar-label">自動翻訳の待ち時間：</span>
+    <input type="range" id="delaySlider" min="0.4" max="2.5" step="0.1" value="1.0" style="width:160px;accent-color:var(--accent);cursor:pointer;" oninput="updateDelay(this.value)">
+    <span class="bar-label" id="delayLabel" style="color:var(--text)">1.0秒</span>
+    <span class="bar-label" style="margin-left:12px;">※ 入力が止まってからこの時間で自動翻訳</span>
+  </div>
+</div>
+
+<div class="content">
+  <div class="input-area">
+    <div class="input-label">
+      🎙 日本語入力（Aqua Voiceでここに音声入力）
+      <span class="input-status ready" id="inputStatus">待機中</span>
+    </div>
+    <textarea id="jaInput" placeholder="ここにカーソルを置いてAqua Voiceで話してください。話し終わると自動で翻訳します。" autofocus></textarea>
+    <div class="manual-row">
+      <button class="btn" onclick="doTranslate()">今すぐ翻訳</button>
+      <button class="btn-sub" onclick="clearInput()">クリア</button>
+    </div>
+  </div>
+
+  <div class="history-list" id="historyList">
+    <div class="empty-msg">音声入力して話し終わると、ここに翻訳が表示されます</div>
+  </div>
+</div>
+
+<script>
+const LANGUAGES = [
+  { code:'zh', name:'中国語', native:'中文', flag:'🇨🇳' },
+  { code:'en', name:'英語', native:'English', flag:'🇺🇸' },
+  { code:'vi', name:'ベトナム語', native:'Tiếng Việt', flag:'🇻🇳' },
+  { code:'tl', name:'タガログ語', native:'Filipino', flag:'🇵🇭' },
+  { code:'id', name:'インドネシア語', native:'Bahasa', flag:'🇮🇩' },
+  { code:'my', name:'ミャンマー語', native:'မြန်မာ', flag:'🇲🇲' },
+  { code:'ne', name:'ネパール語', native:'नेपाली', flag:'🇳🇵' },
+  { code:'si', name:'シンハラ語', native:'සිංහල', flag:'🇱🇰' },
+  { code:'bn', name:'ベンガル語', native:'বাংলা', flag:'🇧🇩' },
+  { code:'km', name:'クメール語', native:'ខ្មែរ', flag:'🇰🇭' },
+];
+
+let apiKey = localStorage.getItem('aqua_api_key') || '';
+let passphrase = localStorage.getItem('app_passphrase') || '';
+let useServerKey = false;
+let selectedLangs = new Set(JSON.parse(localStorage.getItem('aqua_langs') || '["id","tl","ne"]'));
+let history = [];
+const MAX_HISTORY = 10;
+let isTranslating = false;
+let autoDelay = parseFloat(localStorage.getItem('aqua_delay') || '1.0'); // 自動翻訳待ち時間（秒）
+let idleTimer = null;
+let lastInputLen = 0;
+
+function apiUrl(path) {
+  return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}${path}`;
+}
+
+function updateDelay(val) {
+  autoDelay = parseFloat(val);
+  localStorage.setItem('aqua_delay', val);
+  document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
+}
+
+// 設定パネル開閉
+function toggleSettings() {
+  const p = document.getElementById('settingsPanel');
+  p.style.display = p.style.display === 'none' || !p.style.display ? 'block' : 'none';
+}
+
+function saveApiKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('aqua_api_key', apiKey);
+  const btn = event.target;
+  btn.textContent = '✓ 保存';
+  setTimeout(() => { btn.textContent = '保存'; }, 1500);
+  updateKeyStatus();
+}
+
+function updateKeyStatus() {
+  const el = document.getElementById('keyStatus');
+  if (useServerKey) { el.textContent = '✅ サーバー経由で翻訳'; el.style.color = '#3fb950'; }
+  else if (apiKey) { el.textContent = '✅ キー設定済み'; el.style.color = '#3fb950'; }
+  else { el.textContent = '⚠️ キー未設定'; el.style.color = '#f0a500'; }
+}
+
+// サーバー設定を確認（キーがサーバーにあるか）
+async function checkServerConfig() {
+  try {
+    const res = await fetch(apiUrl(`/config?passphrase=${encodeURIComponent(passphrase)}`));
+    if (!res.ok) return;
+    const cfg = await res.json();
+    if (cfg.anthropic) useServerKey = true;
+  } catch(e) {}
+  updateKeyStatus();
+}
+
+// 言語チップ
+function renderLangChips() {
+  const c = document.getElementById('langChips');
+  c.innerHTML = LANGUAGES.map(l => {
+    const sel = selectedLangs.has(l.code);
+    return `<label class="lang-chip ${sel?'selected':''}"><input type="checkbox" value="${l.code}" ${sel?'checked':''}>${l.flag} ${l.name}</label>`;
+  }).join('');
+  c.querySelectorAll('input').forEach(cb => cb.addEventListener('change', () => toggleLang(cb.value, cb.checked)));
+}
+
+function toggleLang(code, checked) {
+  if (checked) {
+    if (selectedLangs.size >= 3) { const first = [...selectedLangs][0]; selectedLangs.delete(first); }
+    selectedLangs.add(code);
+  } else {
+    selectedLangs.delete(code);
+  }
+  localStorage.setItem('aqua_langs', JSON.stringify([...selectedLangs]));
+  renderLangChips();
+}
+
+function clearInput() {
+  document.getElementById('jaInput').value = '';
+  document.getElementById('jaInput').focus();
+}
+
+function setStatus(state, text) {
+  const el = document.getElementById('inputStatus');
+  el.className = 'input-status ' + state;
+  el.textContent = text;
+}
+
+// 翻訳実行
+async function doTranslate() {
+  const inputEl = document.getElementById('jaInput');
+  const text = inputEl.value.trim();
+  if (!text) return;
+  if (isTranslating) return;
+
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  if (!langs.length) { alert('言語を1つ以上選んでください'); return; }
+
+  if (!apiKey && !useServerKey) {
+    alert('APIキーが設定されていません（⚙️設定から入力）');
+    return;
+  }
+
+  isTranslating = true;
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  setStatus('translating', '翻訳中...');
+
+  // 入力欄を即クリアして次の入力に備える
+  inputEl.value = '';
+  inputEl.focus();
+
+  const entry = { id: Date.now().toString(), ja: text, translations: {}, loading: true };
+  history.unshift(entry);
+  if (history.length > MAX_HISTORY) history.pop();
+  renderHistory();
+
+  const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
+  const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
+
+日本語:「${text}」
+
+以下の言語へ翻訳してJSONのみ返してください:
+${langList}
+
+{"zh":"...","en":"..."}のように選択言語のキーのみ含めてください。`;
+
+  try {
+    const res = await fetch(apiUrl('/api'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: (useServerKey ? '' : apiKey),
+        passphrase: passphrase,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        stream: true,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '', fullText = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const d = line.slice(6).trim();
+        if (d === '[DONE]') continue;
+        try {
+          const p = JSON.parse(d);
+          if (p.type === 'content_block_delta' && p.delta?.text) {
+            fullText += p.delta.text;
+            const m = fullText.match(/\{[\s\S]*\}/);
+            if (m) { try { entry.translations = JSON.parse(m[0]); entry.loading = false; renderHistory(); } catch(e) {} }
+          }
+        } catch(e) {}
+      }
+    }
+    const m = fullText.match(/\{[\s\S]*\}/);
+    if (m) { try { entry.translations = JSON.parse(m[0]); } catch(e) {} }
+    entry.loading = false;
+    renderHistory();
+  } catch(err) {
+    entry.loading = false;
+    entry.error = true;
+    renderHistory();
+    console.error('翻訳エラー:', err);
+  } finally {
+    isTranslating = false;
+    setStatus('ready', '待機中');
+  }
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (!history.length) {
+    list.innerHTML = '<div class="empty-msg">音声入力して話し終わると、ここに翻訳が表示されます</div>';
+    return;
+  }
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  list.innerHTML = history.map((item, idx) => {
+    const rows = langs.map(lang => {
+      const t = item.translations[lang.code];
+      const cls = item.loading ? 'loading' : '';
+      const txt = item.loading ? '翻訳中...' : (t || '－');
+      return `<div class="hist-lang-row"><span class="hist-flag">${lang.flag}</span><span class="hist-name">${lang.name}</span><span class="hist-text ${cls}">${esc(txt)}</span></div>`;
+    }).join('');
+    return `<div class="hist-item ${idx===0?'latest':''}"><div class="hist-ja">${esc(item.ja)}</div>${rows}</div>`;
+  }).join('');
+  list.scrollTop = 0;
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// 入力監視：文字が入って一定時間止まったら自動翻訳
+function scheduleAutoTranslate() {
+  if (idleTimer) clearTimeout(idleTimer);
+  const el = document.getElementById('jaInput');
+  if (!el.value.trim()) return; // 空なら何もしない
+  idleTimer = setTimeout(() => {
+    if (document.getElementById('jaInput').value.trim() && !isTranslating) {
+      doTranslate();
+    }
+  }, autoDelay * 1000);
+}
+
+// input欄への入力（Aqua Voiceの書き込み含む）を監視
+document.getElementById('jaInput').addEventListener('input', () => {
+  scheduleAutoTranslate();
+});
+
+function init() {
+  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
+  renderLangChips();
+  document.getElementById('delaySlider').value = autoDelay;
+  document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
+  checkServerConfig();
+  updateKeyStatus();
+  document.getElementById('jaInput').focus();
+}
+
+init();
+</script>
+</body>
+</html>
