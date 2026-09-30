@@ -232,9 +232,21 @@ let history = [];
 const MAX_HISTORY = 10;
 let isTranslating = false;
 let idleTimer = null;
+let ws = null;
 
 function apiUrl(path) {
   return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}${path}`;
+}
+
+
+// 受講者ページへの配信（WebSocket）
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const port = location.port ? ':' + location.port : '';
+  ws = new WebSocket(`${proto}//${location.hostname}${port}/ws`);
+  ws.onopen = () => { console.log('受講者配信WS接続'); };
+  ws.onclose = () => { setTimeout(connectWS, 3000); };
+  ws.onerror = () => {};
 }
 
 function toggleSettings() {
@@ -433,6 +445,7 @@ async function doTranslate() {
   history.unshift(entry);
   if (history.length > MAX_HISTORY) history.pop();
   renderHistory();
+  sendJa('add', entry.id, text); // 受講者ページへ日本語を配信（並列翻訳）
 
   const ctxText = (catContext[selectedCategory] || '').slice(0, 2000);
   const ctxHint = CATEGORY_CONTEXT[selectedCategory] || '';
@@ -546,6 +559,7 @@ async function confirmEdit(id) {
   item.translations = {};
   item.loading = true;
   renderHistory();
+  sendJa('edit', item.id, applyDict(newJa)); // 受講者ページへ修正後の日本語を配信
   await retranslate(item);
 }
 
@@ -553,7 +567,7 @@ async function confirmEdit(id) {
 function deleteHist(id) {
   history = history.filter(h => h.id !== id);
   renderHistory();
-  broadcastHistory();
+  sendJa('delete', id, '');
 }
 
 // 辞書自動蓄積：AIに修正前後を比較させ、変わった単語だけを誤→正で登録
@@ -660,13 +674,17 @@ ${langList}
     const m = full.match(/\{[\s\S]*\}/);
     if (m) { try { item.translations = JSON.parse(m[0]); } catch(e){} }
     item.loading = false; renderHistory();
-    broadcastHistory();
   } catch(err) {
     item.loading = false; renderHistory();
   }
 }
 
-// 受講者配信（第三段階で実装。今は何もしない）
+// 受講者ページへ「確定した日本語」を配信（各ページが自分で翻訳する）
+function sendJa(action, id, ja) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'ja', action, id, ja }));
+}
+// 互換のため残す（言語変更時などは何もしない：各ページが自分の言語を持つ）
 function broadcastHistory() {}
 
 
@@ -744,6 +762,7 @@ function init() {
   renderDict();
   renderCtx();
   loadServer();
+  connectWS();
   document.getElementById('jaInput').focus();
 }
 init();
