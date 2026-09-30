@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>講師用 - 多言語通訳システム（Aqua Voice版）</title>
+<style>
+  :root {
+    --bg: #000; --bg2: #0d0d0d; --bg3: #111;
+    --border: #222; --text: #eee; --text2: #666;
+    --accent: #f0a500; --success: #3fb950; --danger: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Noto Sans JP','Noto Sans',sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: #080808; border-bottom: 2px solid var(--accent); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .hint { margin-left: auto; font-size: 11px; color: var(--text2); }
+  .settings-toggle-btn { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 4px 8px; font-size: 14px; cursor: pointer; margin-left: 8px; }
+  .settings-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* 設定パネル */
+  #settingsPanel { display: none; background: #060606; border-bottom: 1px solid var(--border); max-height: 55vh; overflow-y: auto; }
+  .bar { padding: 8px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid #161616; }
+  .bar-label { font-size: 11px; color: var(--text2); white-space: nowrap; }
+  .api-input { background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 200px; }
+  .api-input::placeholder { color: #444; }
+  .btn-mini { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+
+  .lang-chip { display: flex; align-items: center; gap: 4px; background: #111; border: 1px solid #333; border-radius: 16px; padding: 3px 8px; cursor: pointer; user-select: none; font-size: 12px; color: #666; white-space: nowrap; }
+  .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(240,165,0,0.08); }
+  .lang-chip input { display: none; }
+
+  .cat-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 16px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .cat-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+
+  .engine-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .engine-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+
+  /* 辞書・用語集 */
+  .sub-tabs { display: flex; gap: 6px; padding: 8px 14px 0; }
+  .sub-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .sub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .sub-content { display: none; padding: 8px 14px; }
+  .sub-content.active { display: block; }
+  .dict-add-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .dict-input { flex: 1; min-width: 120px; background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
+  .dict-list { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .dict-item { display: flex; align-items: center; gap: 8px; background: #111; border: 1px solid #333; border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+  .dict-wrong { color: var(--danger); flex: 1; }
+  .dict-correct { color: var(--success); flex: 1; }
+  .dict-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 14px; }
+  .ctx-textarea { width: 100%; height: 90px; background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 8px; font-size: 12px; font-family: inherit; resize: vertical; }
+
+  /* メイン */
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 10px; gap: 8px; min-height: 0; }
+  .toprow { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .cat-current { font-size: 12px; color: var(--accent); font-weight: 700; }
+  .status-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+  .status-chip.ready { background: #1a3a1a; color: var(--success); }
+  .status-chip.translating { background: #3a2f1a; color: var(--accent); }
+
+  #jaInput { width: 100%; min-height: 64px; background: #0a0a1a; border: 2px solid #2a2a4a; color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 22px; font-weight: 700; font-family: inherit; line-height: 1.4; resize: none; flex-shrink: 0; }
+  #jaInput:focus { outline: none; border-color: var(--accent); }
+  #jaInput::placeholder { color: #333; font-weight: 400; font-size: 15px; }
+  .manual-row { display: flex; gap: 8px; flex-shrink: 0; }
+  .btn { background: var(--accent); border: none; color: #000; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .btn-sub { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+
+  .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 10px 0; min-height: 0; }
+  .history-list::-webkit-scrollbar { width: 6px; }
+  .history-list::-webkit-scrollbar-track { background: #0a0a0a; }
+  .history-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .hist-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex-shrink: 0; }
+  .hist-item.latest { border-color: var(--accent); background: #0d0d0d; }
+  .hist-ja { font-size: 15px; font-weight: 700; color: #bbb; margin-bottom: 8px; line-height: 1.4; }
+  .hist-lang-row { display: flex; align-items: baseline; gap: 8px; margin-top: 5px; }
+  .hist-flag { font-size: 16px; flex-shrink: 0; }
+  .hist-name { font-size: 11px; color: #444; width: 90px; flex-shrink: 0; }
+  .hist-text { font-size: 22px; color: #fff; line-height: 1.45; }
+  .hist-text.loading { color: #444; font-size: 14px; font-style: italic; }
+  .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎙 多言語通訳システム（講師用）</h1>
+  <span class="hint">入力欄にAqua Voiceで音声入力 → 話し終わると自動翻訳</span>
+  <button class="settings-toggle-btn" onclick="toggleSettings()" title="設定">⚙️ 設定</button>
+</header>
+
+<div id="settingsPanel">
+  <!-- APIキー・合言葉 -->
+  <div class="bar">
+    <span class="bar-label" id="keyStatus" style="color:#444">APIキー確認中...</span>
+    <input type="password" class="api-input" id="apiKeyInput" placeholder="手動入力（任意）" style="display:none" />
+    <button class="btn-mini" id="apiKeySaveBtn" onclick="saveApiKey()" style="display:none">保存</button>
+  </div>
+
+  <!-- 翻訳モデル -->
+  <div class="bar">
+    <span class="bar-label">翻訳モデル：</span>
+    <button class="engine-btn active" id="modelSonnet" onclick="switchModel('sonnet')">✨ Sonnet 5（高品質）</button>
+    <button class="engine-btn" id="modelHaiku" onclick="switchModel('haiku')">⚡ Haiku（高速）</button>
+  </div>
+
+  <!-- 自動翻訳の待ち時間 -->
+  <div class="bar">
+    <span class="bar-label">自動翻訳の待ち時間：</span>
+    <input type="range" id="delaySlider" min="0.1" max="2.5" step="0.1" value="0.1" style="width:160px;accent-color:var(--accent);cursor:pointer;" oninput="updateDelay(this.value)">
+    <span class="bar-label" id="delayLabel" style="color:var(--text)">0.1秒</span>
+  </div>
+
+  <!-- 表示言語 -->
+  <div class="bar">
+    <span class="bar-label">表示言語（最大3つ）：</span>
+    <div id="langChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+  </div>
+
+  <!-- 辞書・用語集 -->
+  <div class="sub-tabs">
+    <button class="sub-tab active" onclick="switchSub('dict')">📖 辞書</button>
+    <button class="sub-tab" onclick="switchSub('ctx')">📄 用語集</button>
+  </div>
+  <div class="sub-content active" id="sub-dict">
+    <div class="dict-add-row">
+      <input class="dict-input" id="dictWrong" placeholder="誤（例：関電）" />
+      <span style="color:var(--text2);align-self:center">→</span>
+      <input class="dict-input" id="dictCorrect" placeholder="正（例：感電）" />
+      <button class="btn-mini" onclick="addDict()">追加</button>
+    </div>
+    <div class="dict-list" id="dictList"></div>
+  </div>
+  <div class="sub-content" id="sub-ctx">
+    <textarea class="ctx-textarea" id="ctxTextarea" placeholder="講習テキストや用語集を貼り付け..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+      <label class="btn-mini">📂 ファイル読込<input type="file" accept=".txt" style="display:none" onchange="loadTxtFile(event)"></label>
+      <button class="btn-mini" onclick="saveCtx()">✓ 保存</button>
+      <span class="bar-label" id="ctxStatus" style="color:var(--success)"></span>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="toprow">
+    <span class="bar-label">講習種別：</span>
+    <div id="catRow" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
+    <span class="status-chip ready" id="statusChip">待機中</span>
+  </div>
+
+  <textarea id="jaInput" placeholder="ここにカーソルを置いてAqua Voiceで話してください。話し終わると自動で翻訳します。" autofocus></textarea>
+  <div class="manual-row">
+    <button class="btn" onclick="doTranslate()">今すぐ翻訳</button>
+    <button class="btn-sub" onclick="clearInput()">クリア</button>
+  </div>
+
+  <div class="history-list" id="historyList">
+    <div class="empty-msg">音声入力して話し終わると、ここに翻訳が表示されます</div>
+  </div>
+</div>
+
+<script>
+const LANGUAGES = [
+  { code:'zh', name:'中国語', native:'中文', flag:'🇨🇳' },
+  { code:'en', name:'英語', native:'English', flag:'🇺🇸' },
+  { code:'vi', name:'ベトナム語', native:'Tiếng Việt', flag:'🇻🇳' },
+  { code:'tl', name:'タガログ語', native:'Filipino', flag:'🇵🇭' },
+  { code:'id', name:'インドネシア語', native:'Bahasa', flag:'🇮🇩' },
+  { code:'my', name:'ミャンマー語', native:'မြန်မာ', flag:'🇲🇲' },
+  { code:'ne', name:'ネパール語', native:'नेपाली', flag:'🇳🇵' },
+  { code:'si', name:'シンハラ語', native:'සිංහල', flag:'🇱🇰' },
+  { code:'bn', name:'ベンガル語', native:'বাংলা', flag:'🇧🇩' },
+  { code:'km', name:'クメール語', native:'ខ្មែរ', flag:'🇰🇭' },
+];
+
+const CATEGORIES = [
+  {id:'general', label:'🏗️ 共通'}, {id:'tamakake', label:'⛓️ 玉掛け'},
+  {id:'gas', label:'🔥 ガス溶接'}, {id:'arc', label:'⚡ アーク溶接'},
+  {id:'vehicle', label:'🚜 車両系'}, {id:'kouso', label:'🪜 高所作業車'},
+  {id:'forklift', label:'🏭 フォークリフト'}, {id:'crane', label:'🏗️ 小型クレーン'},
+  {id:'ashiba', label:'🧱 足場'}, {id:'harness', label:'🦺 フルハーネス'},
+  {id:'legal', label:'⚖️ 法的講習'}, {id:'police', label:'🚔 警察講習'},
+  {id:'fire', label:'🚒 消防講習'},
+];
+
+const CATEGORY_CONTEXT = {
+  general:'建設業全般の安全・作業用語（KY活動、保護具、リスクアセスメント、ヒヤリハット、労働安全衛生法）',
+  tamakake:'玉掛け作業（ワイヤーロープ、スリング、シャックル、フック、荷重計算、つり角度、安全荷重、モード係数）',
+  gas:'ガス溶接・切断（アセチレン、酸素、溶接棒、吹管、圧力調整器、逆火）',
+  arc:'アーク溶接（溶接電流、電圧、アーク長、スパッタ、被覆アーク溶接、炭酸ガスアーク溶接）',
+  vehicle:'車両系建設機械（ショベル、ブルドーザー、転倒防止、掘削、整地、地耐力、作業計画）',
+  kouso:'高所作業車（作業床、最大積載荷重、ブーム、アウトリガー、安全帯、墜落制止、過負荷防止装置）',
+  forklift:'フォークリフト（フォーク、マスト、チルト、荷役、荷重中心、最大荷重、ヘッドガード）',
+  crane:'移動式クレーン（定格荷重、作業半径、ブーム長、アウトリガー、過負荷防止、巻過防止、玉掛け）',
+  ashiba:'足場（単管足場、枠組足場、手すり、幅木、足場板、壁つなぎ、筋交、養生シート）',
+  harness:'フルハーネス（ランヤード、フック、D環、落下距離、ショックアブソーバー、作業前点検、廃棄基準）',
+  legal:'法的講習・法令関連（労働安全衛生法、労働基準法、コンプライアンス、ハラスメント防止、個人情報保護、就業規則）',
+  police:'警察講習・防犯安全（不審者対応、緊急連絡、事故報告、交通安全、防犯対策、警察連携）',
+  fire:'消防講習・防災安全（火災予防、消火器使用、避難誘導、防火管理、緊急対応、救急処置）',
+};
+
+const MODEL_IDS = { sonnet: 'claude-sonnet-4-6', haiku: 'claude-haiku-4-5-20251001' };
+
+let passphrase = localStorage.getItem('app_passphrase') || '';
+let apiKey = localStorage.getItem('teacher_api_key') || '';
+let useServerKey = false;
+let serverConfig = { anthropic:false, passphrase_required:false };
+let selectedLangs = new Set(JSON.parse(localStorage.getItem('teacher_langs') || '["id","tl","ne"]'));
+let selectedCategory = localStorage.getItem('teacher_cat') || 'general';
+let model = localStorage.getItem('teacher_model') || 'sonnet';
+let autoDelay = parseFloat(localStorage.getItem('teacher_delay') || '0.1');
+// 講習種別ごとの辞書・用語集（サーバーから読み込み）
+let catDict = {};     // { categoryId: [ {wrong,correct}, ... ] }
+let catContext = {};  // { categoryId: "用語集テキスト" }
+let history = [];
+const MAX_HISTORY = 10;
+let isTranslating = false;
+let idleTimer = null;
+
+function apiUrl(path) {
+  return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}${path}`;
+}
+
+function toggleSettings() {
+  const p = document.getElementById('settingsPanel');
+  p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+}
+function switchSub(tab) {
+  document.querySelectorAll('.sub-tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='dict')||(i===1&&tab==='ctx')));
+  document.getElementById('sub-dict').classList.toggle('active', tab==='dict');
+  document.getElementById('sub-ctx').classList.toggle('active', tab==='ctx');
+}
+function updateDelay(val) {
+  autoDelay = parseFloat(val);
+  localStorage.setItem('teacher_delay', val);
+  document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
+}
+
+// APIキー
+function saveApiKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('teacher_api_key', apiKey);
+  const b = event.target; b.textContent = '✓'; setTimeout(()=>{b.textContent='保存';},1500);
+  updateKeyStatus();
+}
+function updateKeyStatus() {
+  const el = document.getElementById('keyStatus');
+  const inp = document.getElementById('apiKeyInput');
+  const btn = document.getElementById('apiKeySaveBtn');
+  if (useServerKey) {
+    el.textContent = '✅ APIキー：サーバー設定済み（入力不要）'; el.style.color = '#3fb950';
+    inp.style.display = 'none'; btn.style.display = 'none';
+  } else if (apiKey) {
+    el.textContent = '✅ APIキー：このPCに保存済み'; el.style.color = '#3fb950';
+    inp.style.display = 'inline-block'; btn.style.display = 'inline-block';
+  } else {
+    el.textContent = '⚠️ APIキー未設定（手動入力してください）'; el.style.color = '#f0a500';
+    inp.style.display = 'inline-block'; btn.style.display = 'inline-block';
+  }
+}
+
+// 翻訳モデル切替
+function switchModel(m) {
+  model = m;
+  localStorage.setItem('teacher_model', m);
+  document.getElementById('modelSonnet').className = 'engine-btn' + (m==='sonnet'?' active':'');
+  document.getElementById('modelHaiku').className = 'engine-btn' + (m==='haiku'?' active':'');
+}
+
+// サーバー設定確認＋データ読み込み
+async function loadServer() {
+  // config
+  try {
+    const res = await fetch(apiUrl(`/config?passphrase=${encodeURIComponent(passphrase)}`));
+    if (res.ok) {
+      const cfg = await res.json();
+      serverConfig = cfg;
+      if (cfg.anthropic) useServerKey = true;
+    }
+  } catch(e) {}
+  updateKeyStatus();
+  // settings（辞書・用語集・言語リスト）
+  try {
+    const res = await fetch(apiUrl('/settings'));
+    if (res.ok) {
+      const d = await res.json();
+      catDict = d.catDict || {};
+      catContext = d.catContext || {};
+      // 旧形式（単一dict/context）を共通カテゴリに移行
+      if ((!catDict.general || !catDict.general.length) && d.dict && d.dict.length) catDict.general = d.dict;
+      if ((!catContext.general) && d.context) catContext.general = d.context;
+      renderDict(); renderCtx();
+    }
+  } catch(e) {}
+}
+async function saveServer() {
+  try {
+    await fetch(apiUrl('/settings'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ catDict, catContext })
+    });
+  } catch(e) { console.log('保存エラー:', e); }
+}
+
+// 講習種別
+function renderCats() {
+  document.getElementById('catRow').innerHTML = CATEGORIES.map(c =>
+    `<button class="cat-btn ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
+  ).join('');
+}
+function selectCat(id) {
+  selectedCategory = id;
+  localStorage.setItem('teacher_cat', id);
+  renderCats(); renderDict(); renderCtx();
+}
+
+// 言語チップ
+function renderLangChips() {
+  const c = document.getElementById('langChips');
+  c.innerHTML = LANGUAGES.map(l => {
+    const sel = selectedLangs.has(l.code);
+    return `<label class="lang-chip ${sel?'selected':''}"><input type="checkbox" value="${l.code}" ${sel?'checked':''}>${l.flag} ${l.name}</label>`;
+  }).join('');
+  c.querySelectorAll('input').forEach(cb => cb.addEventListener('change', ()=>toggleLang(cb.value, cb.checked)));
+}
+function toggleLang(code, checked) {
+  if (checked) {
+    if (selectedLangs.size >= 3) { const first=[...selectedLangs][0]; selectedLangs.delete(first); }
+    selectedLangs.add(code);
+  } else selectedLangs.delete(code);
+  localStorage.setItem('teacher_langs', JSON.stringify([...selectedLangs]));
+  renderLangChips();
+}
+
+// 辞書
+function currentDict() { return catDict[selectedCategory] || (catDict[selectedCategory] = []); }
+function addDict() {
+  const w = document.getElementById('dictWrong').value.trim();
+  const c = document.getElementById('dictCorrect').value.trim();
+  if (!w || !c) return;
+  currentDict().push({ wrong:w, correct:c });
+  document.getElementById('dictWrong').value=''; document.getElementById('dictCorrect').value='';
+  renderDict(); saveServer();
+}
+function delDict(i) { currentDict().splice(i,1); renderDict(); saveServer(); }
+function renderDict() {
+  const list = document.getElementById('dictList');
+  const d = currentDict();
+  if (!d.length) { list.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:6px;">この講習の辞書は空です</div>'; return; }
+  list.innerHTML = d.map((e,i) =>
+    `<div class="dict-item"><span class="dict-wrong">${esc(e.wrong)}</span><span style="color:var(--text2)">→</span><span class="dict-correct">${esc(e.correct)}</span><button class="dict-del" onclick="delDict(${i})">✕</button></div>`
+  ).join('');
+}
+function applyDict(text) {
+  let r = text;
+  (catDict[selectedCategory]||[]).forEach(e => { r = r.split(e.wrong).join(e.correct); });
+  // 共通辞書も適用
+  if (selectedCategory !== 'general') (catDict.general||[]).forEach(e => { r = r.split(e.wrong).join(e.correct); });
+  return r;
+}
+
+// 用語集
+function renderCtx() {
+  document.getElementById('ctxTextarea').value = catContext[selectedCategory] || '';
+}
+function saveCtx() {
+  catContext[selectedCategory] = document.getElementById('ctxTextarea').value.trim();
+  const s = document.getElementById('ctxStatus');
+  s.textContent = `✓ 保存（${(catContext[selectedCategory]||'').length}文字）`;
+  setTimeout(()=>{ s.textContent=''; }, 2500);
+  saveServer();
+}
+function loadTxtFile(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { document.getElementById('ctxTextarea').value = ev.target.result; };
+  r.readAsText(f, 'UTF-8');
+}
+
+function clearInput() {
+  document.getElementById('jaInput').value='';
+  document.getElementById('jaInput').focus();
+}
+function setStatus(state, text) {
+  const el = document.getElementById('statusChip');
+  el.className = 'status-chip ' + state; el.textContent = text;
+}
+
+// 自動翻訳スケジュール
+function scheduleAutoTranslate() {
+  if (idleTimer) clearTimeout(idleTimer);
+  const el = document.getElementById('jaInput');
+  if (!el.value.trim()) return;
+  idleTimer = setTimeout(() => {
+    if (document.getElementById('jaInput').value.trim() && !isTranslating) doTranslate();
+  }, autoDelay * 1000);
+}
+document.getElementById('jaInput').addEventListener('input', scheduleAutoTranslate);
+
+// 翻訳実行
+async function doTranslate() {
+  const inputEl = document.getElementById('jaInput');
+  const raw = inputEl.value.trim();
+  if (!raw || isTranslating) return;
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  if (!langs.length) { alert('言語を1つ以上選んでください'); return; }
+  if (!apiKey && !useServerKey) { alert('APIキーが設定されていません（⚙️設定）'); return; }
+
+  const text = applyDict(raw); // 辞書補正
+
+  isTranslating = true;
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  setStatus('translating', '翻訳中...');
+  inputEl.value = ''; inputEl.focus();
+
+  const entry = { id: Date.now().toString(), ja: text, translations:{}, loading:true };
+  history.unshift(entry);
+  if (history.length > MAX_HISTORY) history.pop();
+  renderHistory();
+
+  const ctxText = (catContext[selectedCategory] || '').slice(0, 2000);
+  const ctxHint = CATEGORY_CONTEXT[selectedCategory] || '';
+  const catName = CATEGORIES.find(c=>c.id===selectedCategory)?.label || '';
+  const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
+  const ctxNote = ctxText ? `\n\n【参考用語集】\n${ctxText}` : '';
+  const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
+講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}
+
+日本語:「${text}」
+
+以下の言語へ翻訳してJSONのみ返してください:
+${langList}
+
+{"zh":"...","en":"..."}のように選択言語のキーのみ含めてください。説明文は不要です。`;
+
+  try {
+    const res = await fetch(apiUrl('/api'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        api_key: (useServerKey ? '' : apiKey),
+        passphrase: passphrase,
+        model: MODEL_IDS[model],
+        max_tokens: 900,
+        stream: true,
+        messages: [{ role:'user', content: prompt }]
+      })
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf='', full='';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream:true});
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const d = line.slice(6).trim();
+        if (d === '[DONE]') continue;
+        try {
+          const p = JSON.parse(d);
+          if (p.type === 'content_block_delta' && p.delta?.text) {
+            full += p.delta.text;
+            const m = full.match(/\{[\s\S]*\}/);
+            if (m) { try { entry.translations = JSON.parse(m[0]); entry.loading=false; renderHistory(); } catch(e){} }
+          }
+        } catch(e){}
+      }
+    }
+    const m = full.match(/\{[\s\S]*\}/);
+    if (m) { try { entry.translations = JSON.parse(m[0]); } catch(e){} }
+    entry.loading = false; renderHistory();
+  } catch(err) {
+    entry.loading = false; entry.error = true; renderHistory();
+    console.error('翻訳エラー:', err);
+  } finally {
+    isTranslating = false; setStatus('ready', '待機中');
+  }
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (!history.length) { list.innerHTML = '<div class="empty-msg">音声入力して話し終わると、ここに翻訳が表示されます</div>'; return; }
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  list.innerHTML = history.map((item, idx) => {
+    const rows = langs.map(lang => {
+      const t = item.translations[lang.code];
+      const cls = item.loading ? 'loading' : '';
+      const txt = item.loading ? '翻訳中...' : (t || '－');
+      return `<div class="hist-lang-row"><span class="hist-flag">${lang.flag}</span><span class="hist-name">${lang.name}</span><span class="hist-text ${cls}">${esc(txt)}</span></div>`;
+    }).join('');
+    return `<div class="hist-item ${idx===0?'latest':''}"><div class="hist-ja">${esc(item.ja)}</div>${rows}</div>`;
+  }).join('');
+  list.scrollTop = 0;
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function init() {
+  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
+  document.getElementById('delaySlider').value = autoDelay;
+  document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
+  switchModel(model);
+  renderCats();
+  renderLangChips();
+  renderDict();
+  renderCtx();
+  loadServer();
+  document.getElementById('jaInput').focus();
+}
+init();
+</script>
+</body>
+</html>

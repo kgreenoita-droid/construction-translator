@@ -25,7 +25,10 @@ ws_clients = set()
 # サーバー側設定保存（メモリ）
 server_settings = {
     'dict': [],
-    'context': ''
+    'context': '',
+    'catDict': {},
+    'catContext': {},
+    'langList': []
 }
 
 # 設定ファイルのパス
@@ -131,10 +134,9 @@ async def post_settings_handler(request):
     global server_settings
     try:
         data = await request.json()
-        if 'dict' in data:
-            server_settings['dict'] = data['dict']
-        if 'context' in data:
-            server_settings['context'] = data['context']
+        # 送られてきたキーをそのまま保存（柔軟な箱方式）
+        for k, v in data.items():
+            server_settings[k] = v
         save_settings()
         return web.Response(
             body=json.dumps({'status': 'ok'}).encode(),
