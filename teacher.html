@@ -103,8 +103,18 @@
   <!-- 翻訳モデル -->
   <div class="bar">
     <span class="bar-label">翻訳モデル：</span>
-    <button class="engine-btn active" id="modelSonnet" onclick="switchModel('sonnet')">✨ Sonnet 5（高品質）</button>
+    <button class="engine-btn active" id="modelSonnet" onclick="switchModel('sonnet')">✨ Sonnet（高品質）</button>
     <button class="engine-btn" id="modelHaiku" onclick="switchModel('haiku')">⚡ Haiku（高速）</button>
+  </div>
+
+  <!-- 品質チェック（逆翻訳） -->
+  <div class="bar" style="flex-direction:column;align-items:stretch;gap:6px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="bar-label">🔍 品質チェック（逆翻訳）：</span>
+      <input class="dict-input" id="qcInput" placeholder="日本語を入力（例：荷を上げる運動を巻き上げという）" style="flex:1;min-width:180px;" />
+      <button class="btn-mini" onclick="runQualityCheck()">両モデルで試す</button>
+    </div>
+    <div id="qcResult" style="font-size:12px;color:var(--text2);"></div>
   </div>
 
   <!-- 自動翻訳の待ち時間 -->
@@ -495,6 +505,69 @@ function renderHistory() {
     return `<div class="hist-item ${idx===0?'latest':''}"><div class="hist-ja">${esc(item.ja)}</div>${rows}</div>`;
   }).join('');
   list.scrollTop = 0;
+}
+
+
+// 品質チェック：日本語→英語→日本語 の逆翻訳を両モデルで実行
+async function runQualityCheck() {
+  const src = document.getElementById('qcInput').value.trim();
+  if (!src) { alert('日本語を入力してください'); return; }
+  if (!apiKey && !useServerKey) { alert('APIキーが設定されていません'); return; }
+  const box = document.getElementById('qcResult');
+  box.innerHTML = '<span style="color:var(--accent)">チェック中...（両モデルで逆翻訳しています）</span>';
+
+  async function oneModel(modelKey) {
+    const mid = MODEL_IDS[modelKey];
+    // 日本語→英語
+    const en = await simpleTranslate(src, '英語(English)', mid);
+    // 英語→日本語
+    const back = await simpleTranslate(en, '日本語', mid);
+    return { en, back };
+  }
+
+  try {
+    const [sonnet, haiku] = await Promise.all([oneModel('sonnet'), oneModel('haiku')]);
+    box.innerHTML = `
+      <div style="margin-top:4px;padding:8px;background:#0a0a0a;border:1px solid #222;border-radius:6px;">
+        <div style="color:#888;margin-bottom:4px;">元の日本語：<span style="color:#fff;">${esc(src)}</span></div>
+        <div style="margin-bottom:6px;">
+          <div style="color:var(--accent);font-weight:700;">✨ Sonnet</div>
+          <div style="color:#8ab;">英訳：${esc(sonnet.en)}</div>
+          <div style="color:#fff;">逆翻訳：${esc(sonnet.back)}</div>
+        </div>
+        <div>
+          <div style="color:#7db8f0;font-weight:700;">⚡ Haiku</div>
+          <div style="color:#8ab;">英訳：${esc(haiku.en)}</div>
+          <div style="color:#fff;">逆翻訳：${esc(haiku.back)}</div>
+        </div>
+        <div style="color:#555;margin-top:6px;font-size:11px;">※ 逆翻訳が元の日本語に近く、意味が崩れていない方が高品質の目安です</div>
+      </div>`;
+  } catch(err) {
+    box.innerHTML = '<span style="color:var(--danger)">エラー: ' + esc(err.message) + '</span>';
+  }
+}
+
+// 単純翻訳（1言語・JSONなし・逆翻訳用）
+async function simpleTranslate(text, targetName, modelId) {
+  const prompt = `次の文を${targetName}に翻訳してください。翻訳結果のみを出力し、説明や引用符は付けないでください。
+
+${text}`;
+  const res = await fetch(apiUrl('/api'), {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      api_key: (useServerKey ? '' : apiKey),
+      passphrase: passphrase,
+      model: modelId,
+      max_tokens: 500,
+      messages: [{ role:'user', content: prompt }]
+    })
+  });
+  const data = await res.json();
+  // 非ストリーミング応答から本文を取り出す
+  if (data.content && data.content.length) {
+    return data.content.map(b => b.text || '').join('').trim();
+  }
+  return '(応答なし)';
 }
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
