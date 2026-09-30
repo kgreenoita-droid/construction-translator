@@ -81,6 +81,12 @@
   .hist-name { font-size: 11px; color: #444; width: 90px; flex-shrink: 0; }
   .hist-text { font-size: 22px; color: #fff; line-height: 1.45; }
   .hist-text.loading { color: #444; font-size: 14px; font-style: italic; }
+  .hist-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+  .hist-head .hist-ja { margin-bottom: 0; flex: 1; }
+  .hist-btns { display: flex; gap: 4px; flex-shrink: 0; }
+  .hist-edit { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .hist-edit:hover { border-color: var(--accent); color: var(--accent); }
+  .edit-input { width: 70%; background: #111; border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 15px; font-family: inherit; }
   .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
 </style>
 </head>
@@ -103,8 +109,8 @@
   <!-- 翻訳モデル -->
   <div class="bar">
     <span class="bar-label">翻訳モデル：</span>
-    <button class="engine-btn active" id="modelSonnet" onclick="switchModel('sonnet')">✨ Sonnet（高品質）</button>
-    <button class="engine-btn" id="modelHaiku" onclick="switchModel('haiku')">⚡ Haiku（高速）</button>
+    <button class="engine-btn" id="modelSonnet" onclick="switchModel('sonnet')">✨ Sonnet（高品質）</button>
+    <button class="engine-btn active" id="modelHaiku" onclick="switchModel('haiku')">⚡ Haiku（高速）</button>
   </div>
 
   <!-- 品質チェック（逆翻訳） -->
@@ -220,7 +226,7 @@ let useServerKey = false;
 let serverConfig = { anthropic:false, passphrase_required:false };
 let selectedLangs = new Set(JSON.parse(localStorage.getItem('teacher_langs') || '["id","tl","ne"]'));
 let selectedCategory = localStorage.getItem('teacher_cat') || 'general';
-let model = localStorage.getItem('teacher_model') || 'sonnet';
+let model = localStorage.getItem('teacher_model') || 'haiku';
 let autoDelay = parseFloat(localStorage.getItem('teacher_delay') || '0.1');
 // 講習種別ごとの辞書・用語集（サーバーから読み込み）
 let catDict = {};     // { categoryId: [ {wrong,correct}, ... ] }
@@ -502,10 +508,138 @@ function renderHistory() {
       const txt = item.loading ? '翻訳中...' : (t || '－');
       return `<div class="hist-lang-row"><span class="hist-flag">${lang.flag}</span><span class="hist-name">${lang.name}</span><span class="hist-text ${cls}">${esc(txt)}</span></div>`;
     }).join('');
-    return `<div class="hist-item ${idx===0?'latest':''}"><div class="hist-ja">${esc(item.ja)}</div>${rows}</div>`;
+    const jaLine = `<div class="hist-ja" id="ja-${item.id}">${esc(item.ja)}</div>`;
+    const btns = `<div class="hist-btns"><button class="hist-edit" onclick="startEdit('${item.id}')">✏️ 修正</button><button class="hist-edit" onclick="deleteHist('${item.id}')">🗑 削除</button></div>`;
+    return `<div class="hist-item ${idx===0?'latest':''}" id="hist-${item.id}"><div class="hist-head">${jaLine}${btns}</div>${rows}</div>`;
   }).join('');
   list.scrollTop = 0;
 }
+
+// 修正モードに入る
+function startEdit(id) {
+  const item = history.find(h => h.id === id);
+  if (!item) return;
+  const jaEl = document.getElementById('ja-' + id);
+  if (!jaEl) return;
+  jaEl.innerHTML = `<input class="edit-input" id="edit-${id}" value="${esc(item.ja).replace(/"/g,'&quot;')}" />
+    <button class="hist-edit" onclick="confirmEdit('${id}')">✓ 再翻訳</button>
+    <button class="hist-edit" onclick="renderHistory()">取消</button>`;
+  const inp = document.getElementById('edit-' + id);
+  inp.focus();
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmEdit(id); });
+}
+
+// 修正を確定 → 辞書に自動蓄積 → 再翻訳
+async function confirmEdit(id) {
+  const item = history.find(h => h.id === id);
+  if (!item) return;
+  const inp = document.getElementById('edit-' + id);
+  if (!inp) return;
+  const newJa = inp.value.trim();
+  if (!newJa) return;
+  const oldJa = item.ja;
+
+  // 辞書自動蓄積：元テキストと違う部分を誤→正として記録
+  if (newJa !== oldJa) {
+    autoLearnDict(oldJa, newJa);
+  }
+
+  // 再翻訳
+  item.ja = newJa;
+  item.translations = {};
+  item.loading = true;
+  renderHistory();
+  await retranslate(item);
+}
+
+// 履歴削除
+function deleteHist(id) {
+  history = history.filter(h => h.id !== id);
+  renderHistory();
+  broadcastHistory();
+}
+
+// 辞書自動蓄積：修正前後を比較し、変わった語を誤→正で登録
+function autoLearnDict(oldJa, newJa) {
+  // 完全一致以外は、旧文全体→新文全体を辞書に入れると誤爆するため、
+  // 短い場合のみ全体を、長い場合は差分の単語を登録する簡易方式
+  // ここでは確実性を優先し「旧→新」をそのまま登録（次に同じ誤認識が来たら直る）
+  const d = currentDict();
+  // 既に同じ誤りが登録済みなら上書き
+  const existing = d.find(e => e.wrong === oldJa);
+  if (existing) { existing.correct = newJa; }
+  else { d.push({ wrong: oldJa, correct: newJa }); }
+  renderDict();
+  saveServer();
+}
+
+// 再翻訳（既存エントリを対象）
+async function retranslate(item) {
+  const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+  if (!langs.length) { item.loading = false; renderHistory(); return; }
+  if (!apiKey && !useServerKey) { item.loading = false; renderHistory(); return; }
+
+  const text = applyDict(item.ja);
+  const ctxText = (catContext[selectedCategory] || '').slice(0, 2000);
+  const ctxHint = CATEGORY_CONTEXT[selectedCategory] || '';
+  const catName = CATEGORIES.find(c=>c.id===selectedCategory)?.label || '';
+  const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
+  const ctxNote = ctxText ? `\n\n【参考用語集】\n${ctxText}` : '';
+  const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
+講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}
+
+日本語:「${text}」
+
+以下の言語へ翻訳してJSONのみ返してください:
+${langList}
+
+{"zh":"...","en":"..."}のように選択言語のキーのみ含めてください。説明文は不要です。`;
+
+  try {
+    const res = await fetch(apiUrl('/api'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        api_key: (useServerKey ? '' : apiKey),
+        passphrase: passphrase,
+        model: MODEL_IDS[model],
+        max_tokens: 900,
+        stream: true,
+        messages: [{ role:'user', content: prompt }]
+      })
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf='', full='';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream:true});
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const dd = line.slice(6).trim();
+        if (dd === '[DONE]') continue;
+        try {
+          const p = JSON.parse(dd);
+          if (p.type === 'content_block_delta' && p.delta?.text) {
+            full += p.delta.text;
+            const m = full.match(/\{[\s\S]*\}/);
+            if (m) { try { item.translations = JSON.parse(m[0]); item.loading=false; renderHistory(); } catch(e){} }
+          }
+        } catch(e){}
+      }
+    }
+    const m = full.match(/\{[\s\S]*\}/);
+    if (m) { try { item.translations = JSON.parse(m[0]); } catch(e){} }
+    item.loading = false; renderHistory();
+    broadcastHistory();
+  } catch(err) {
+    item.loading = false; renderHistory();
+  }
+}
+
+// 受講者配信（第三段階で実装。今は何もしない）
+function broadcastHistory() {}
 
 
 // 品質チェック：日本語→英語→日本語 の逆翻訳を両モデルで実行
