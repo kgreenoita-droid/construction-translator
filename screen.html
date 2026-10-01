@@ -230,7 +230,30 @@ function render(){
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function init(){
+async function ensurePassphrase(){
+  async function tryConfig(){
+    try{
+      const res=await fetch(apiUrl(`/config?passphrase=${encodeURIComponent(passphrase)}`));
+      if(res.status===401) return 'need';
+      if(res.ok){ const c=await res.json(); if(c.anthropic) useServerKey=true; return 'ok'; }
+      return 'ok';
+    }catch(e){ return 'ok'; }
+  }
+  let st=await tryConfig();
+  while(st==='need'){
+    const input=prompt('合言葉を入力してください：');
+    if(input===null) return false;
+    passphrase=input.trim();
+    st=await tryConfig();
+    if(st==='ok') localStorage.setItem('app_passphrase',passphrase);
+    else if(st==='need') alert('合言葉が違います。もう一度入力してください。');
+  }
+  return true;
+}
+
+async function init(){
+  const ok=await ensurePassphrase();
+  if(!ok){ document.body.innerHTML='<div style="color:#eee;padding:40px;text-align:center;font-size:18px;">合言葉が必要です。再読み込みして入力してください。</div>'; return; }
   if(apiKey) document.getElementById('apiKeyInput').value=apiKey;
   setSize(textSize);
   renderLangChips();
