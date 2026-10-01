@@ -30,6 +30,7 @@
   .bar-label { font-size: 11px; color: var(--text2); white-space: nowrap; }
   .api-input { background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 200px; }
   .btn-mini { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .btn-mini.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
   .lang-chip { display: flex; align-items: center; gap: 4px; background: #111; border: 1px solid #333; border-radius: 16px; padding: 3px 8px; cursor: pointer; user-select: none; font-size: 12px; color: #666; white-space: nowrap; }
   .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(240,165,0,0.08); }
   .lang-chip input { display: none; }
@@ -48,6 +49,14 @@
   .lang-text { font-size: 40px; font-weight: 700; color: #fff; line-height: 1.35; flex: 1; }
   .lang-text.loading { color: #444; font-size: 20px; font-style: italic; font-weight: 400; }
 
+  body[data-size="s"] .lang-text { font-size: 28px; }
+  body[data-size="m"] .lang-text { font-size: 40px; }
+  body[data-size="l"] .lang-text { font-size: 52px; }
+  body[data-size="xl"] .lang-text { font-size: 68px; }
+  body[data-size="s"] .card-ja { font-size: 16px; }
+  body[data-size="m"] .card-ja { font-size: 20px; }
+  body[data-size="l"] .card-ja { font-size: 26px; }
+  body[data-size="xl"] .card-ja { font-size: 32px; }
   .waiting { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text2); font-size: 20px; text-align: center; }
 </style>
 </head>
@@ -73,6 +82,13 @@
     <span class="bar-label">このモニターの担当言語（最大3つ）：</span>
     <div id="langChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
   </div>
+  <div class="bar">
+    <span class="bar-label">文字サイズ：</span>
+    <button class="btn-mini" onclick="setSize('s')" id="size-s">小</button>
+    <button class="btn-mini" onclick="setSize('m')" id="size-m">中</button>
+    <button class="btn-mini" onclick="setSize('l')" id="size-l">大</button>
+    <button class="btn-mini" onclick="setSize('xl')" id="size-xl">特大</button>
+  </div>
 </div>
 
 <div class="content" id="content">
@@ -80,7 +96,7 @@
 </div>
 
 <script>
-const LANGUAGES = [
+const DEFAULT_LANGUAGES = [
   { code:'zh', name:'中国語', native:'中文', flag:'🇨🇳' },
   { code:'en', name:'英語', native:'English', flag:'🇺🇸' },
   { code:'vi', name:'ベトナム語', native:'Tiếng Việt', flag:'🇻🇳' },
@@ -92,10 +108,18 @@ const LANGUAGES = [
   { code:'bn', name:'ベンガル語', native:'বাংলা', flag:'🇧🇩' },
   { code:'km', name:'クメール語', native:'ខ្មែរ', flag:'🇰🇭' },
 ];
-const LANG_MAP = Object.fromEntries(LANGUAGES.map(l => [l.code, l]));
+let LANGUAGES = JSON.parse(localStorage.getItem('screen_langlist') || 'null') || DEFAULT_LANGUAGES.slice();
+let LANG_MAP = Object.fromEntries(LANGUAGES.map(l => [l.code, l]));
 const MODEL_ID = 'claude-haiku-4-5-20251001';
 
 let ws = null;
+let textSize = localStorage.getItem('screen_size') || 'm';
+function setSize(s) {
+  textSize = s;
+  localStorage.setItem('screen_size', s);
+  document.body.setAttribute('data-size', s);
+  ['s','m','l','xl'].forEach(x => { const b=document.getElementById('size-'+x); if(b) b.className='btn-mini'+(x===s?' active':''); });
+}
 let passphrase = localStorage.getItem('app_passphrase') || '';
 let apiKey = localStorage.getItem('screen_api_key') || '';
 let useServerKey = false;
@@ -119,6 +143,8 @@ function updateKeyStatus(){
 async function checkConfig(){
   try{ const res=await fetch(apiUrl(`/config?passphrase=${encodeURIComponent(passphrase)}`)); if(res.ok){ const c=await res.json(); if(c.anthropic) useServerKey=true; } }catch(e){}
   updateKeyStatus();
+  // 講師が編集した言語リストをサーバーから取得
+  try{ const res=await fetch(apiUrl('/settings')); if(res.ok){ const d=await res.json(); if(d.langList && d.langList.length){ LANGUAGES=d.langList; LANG_MAP=Object.fromEntries(LANGUAGES.map(l=>[l.code,l])); localStorage.setItem('screen_langlist',JSON.stringify(LANGUAGES)); renderLangChips(); } } }catch(e){}
 }
 
 function renderLangChips(){
@@ -206,6 +232,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 
 function init(){
   if(apiKey) document.getElementById('apiKeyInput').value=apiKey;
+  setSize(textSize);
   renderLangChips();
   checkConfig();
   connectWS();

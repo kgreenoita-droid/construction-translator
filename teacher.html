@@ -88,6 +88,15 @@
   .hist-edit { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
   .hist-edit:hover { border-color: var(--accent); color: var(--accent); }
   .edit-input { width: 70%; background: #111; border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 15px; font-family: inherit; }
+  /* 文字サイズ段階（履歴の翻訳文字） */
+  body[data-size="s"] .hist-text { font-size: 18px; }
+  body[data-size="m"] .hist-text { font-size: 22px; }
+  body[data-size="l"] .hist-text { font-size: 28px; }
+  body[data-size="xl"] .hist-text { font-size: 36px; }
+  body[data-size="s"] .hist-ja { font-size: 13px; }
+  body[data-size="m"] .hist-ja { font-size: 15px; }
+  body[data-size="l"] .hist-ja { font-size: 18px; }
+  body[data-size="xl"] .hist-ja { font-size: 22px; }
   .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
 </style>
 </head>
@@ -131,10 +140,29 @@
     <span class="bar-label" id="delayLabel" style="color:var(--text)">0.1秒</span>
   </div>
 
-  <!-- 表示言語 -->
+  <!-- 文字サイズ -->
   <div class="bar">
-    <span class="bar-label">表示言語（最大3つ）：</span>
-    <div id="langChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    <span class="bar-label">文字サイズ：</span>
+    <button class="engine-btn" onclick="setSize('s')" id="size-s">小</button>
+    <button class="engine-btn" onclick="setSize('m')" id="size-m">中</button>
+    <button class="engine-btn" onclick="setSize('l')" id="size-l">大</button>
+    <button class="engine-btn" onclick="setSize('xl')" id="size-xl">特大</button>
+  </div>
+
+  <!-- 表示言語 -->
+  <div class="bar" style="flex-direction:column;align-items:stretch;gap:6px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="bar-label">表示言語（最大3つ）：</span>
+      <div id="langChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span class="bar-label">言語の追加：</span>
+      <input class="dict-input" id="newLangName" placeholder="言語名（例：タイ語）" style="max-width:120px;" />
+      <input class="dict-input" id="newLangNative" placeholder="現地表記（例：ภาษาไทย）" style="max-width:130px;" />
+      <input class="dict-input" id="newLangFlag" placeholder="旗🇹🇭" style="max-width:70px;" />
+      <button class="btn-mini" onclick="addLanguage()">＋追加</button>
+      <span class="bar-label" id="langMsg" style="color:var(--success)"></span>
+    </div>
   </div>
 
   <!-- 辞書・用語集 -->
@@ -176,7 +204,7 @@
 </div>
 
 <script>
-const LANGUAGES = [
+const DEFAULT_LANGUAGES = [
   { code:'zh', name:'中国語', native:'中文', flag:'🇨🇳' },
   { code:'en', name:'英語', native:'English', flag:'🇺🇸' },
   { code:'vi', name:'ベトナム語', native:'Tiếng Việt', flag:'🇻🇳' },
@@ -188,6 +216,7 @@ const LANGUAGES = [
   { code:'bn', name:'ベンガル語', native:'বাংলা', flag:'🇧🇩' },
   { code:'km', name:'クメール語', native:'ខ្មែរ', flag:'🇰🇭' },
 ];
+let LANGUAGES = JSON.parse(localStorage.getItem('teacher_langlist') || 'null') || DEFAULT_LANGUAGES.slice();
 
 const CATEGORIES = [
   {id:'general', label:'🏗️ 共通'}, {id:'tamakake', label:'⛓️ 玉掛け'},
@@ -249,6 +278,18 @@ function connectWS() {
   ws.onerror = () => {};
 }
 
+
+// 文字サイズ
+let textSize = localStorage.getItem('teacher_size') || 'm';
+function setSize(s) {
+  textSize = s;
+  localStorage.setItem('teacher_size', s);
+  document.body.setAttribute('data-size', s);
+  ['s','m','l','xl'].forEach(x => {
+    const b = document.getElementById('size-'+x);
+    if (b) b.className = 'engine-btn' + (x===s?' active':'');
+  });
+}
 function toggleSettings() {
   const p = document.getElementById('settingsPanel');
   p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
@@ -314,10 +355,11 @@ async function loadServer() {
       const d = await res.json();
       catDict = d.catDict || {};
       catContext = d.catContext || {};
+      if (d.langList && d.langList.length) { LANGUAGES = d.langList; localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES)); }
       // 旧形式（単一dict/context）を共通カテゴリに移行
       if ((!catDict.general || !catDict.general.length) && d.dict && d.dict.length) catDict.general = d.dict;
       if ((!catContext.general) && d.context) catContext.general = d.context;
-      renderDict(); renderCtx();
+      renderDict(); renderCtx(); renderLangChips();
     }
   } catch(e) {}
 }
@@ -325,7 +367,7 @@ async function saveServer() {
   try {
     await fetch(apiUrl('/settings'), {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ catDict, catContext })
+      body: JSON.stringify({ catDict, catContext, langList: LANGUAGES })
     });
   } catch(e) { console.log('保存エラー:', e); }
 }
@@ -344,12 +386,43 @@ function selectCat(id) {
 
 // 言語チップ
 function renderLangChips() {
-  const c = document.getElementById('langChips');
-  c.innerHTML = LANGUAGES.map(l => {
+  const cont = document.getElementById('langChips');
+  cont.innerHTML = LANGUAGES.map(l => {
     const sel = selectedLangs.has(l.code);
-    return `<label class="lang-chip ${sel?'selected':''}"><input type="checkbox" value="${l.code}" ${sel?'checked':''}>${l.flag} ${l.name}</label>`;
+    return `<span class="lang-chip ${sel?'selected':''}"><label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="checkbox" value="${l.code}" ${sel?'checked':''}>${l.flag} ${l.name}</label><span onclick="removeLanguage('${l.code}')" style="cursor:pointer;color:#a44;margin-left:2px;" title="この言語を一覧から削除">✕</span></span>`;
   }).join('');
-  c.querySelectorAll('input').forEach(cb => cb.addEventListener('change', ()=>toggleLang(cb.value, cb.checked)));
+  cont.querySelectorAll('input').forEach(cb => cb.addEventListener('change', ()=>toggleLang(cb.value, cb.checked)));
+}
+
+// 言語を一覧に追加
+function addLanguage() {
+  const name = document.getElementById('newLangName').value.trim();
+  const native = document.getElementById('newLangNative').value.trim();
+  const flag = document.getElementById('newLangFlag').value.trim() || '🌐';
+  if (!name) { alert('言語名を入力してください'); return; }
+  // codeは名前から簡易生成（重複回避）
+  let code = 'x' + Date.now().toString(36).slice(-4);
+  LANGUAGES.push({ code, name, native: native||name, flag });
+  localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES));
+  document.getElementById('newLangName').value='';
+  document.getElementById('newLangNative').value='';
+  document.getElementById('newLangFlag').value='';
+  const msg = document.getElementById('langMsg'); msg.textContent = `✓「${name}」を追加`; setTimeout(()=>{msg.textContent='';},2500);
+  renderLangChips();
+  saveServer();
+}
+
+// 言語を一覧から削除
+function removeLanguage(code) {
+  const l = LANGUAGES.find(x=>x.code===code);
+  if (!l) return;
+  if (!confirm(`「${l.name}」を言語一覧から削除しますか？`)) return;
+  LANGUAGES = LANGUAGES.filter(x=>x.code!==code);
+  selectedLangs.delete(code);
+  localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES));
+  localStorage.setItem('teacher_langs', JSON.stringify([...selectedLangs]));
+  renderLangChips();
+  saveServer();
 }
 function toggleLang(code, checked) {
   if (checked) {
@@ -757,6 +830,7 @@ function init() {
   document.getElementById('delaySlider').value = autoDelay;
   document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
   switchModel(model);
+  setSize(textSize);
   renderCats();
   renderLangChips();
   renderDict();
