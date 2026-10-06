@@ -36,6 +36,8 @@
   .cat-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 16px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
   .cat-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
 
+  .cat-group-label { font-size: 10px; color: var(--accent); font-weight: 700; margin-right: 2px; align-self: center; white-space: nowrap; }
+  .cat-group-sep { width: 100%; height: 0; flex-basis: 100%; }
   .engine-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
   .engine-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
 
@@ -219,29 +221,31 @@ const DEFAULT_LANGUAGES = [
 let LANGUAGES = JSON.parse(localStorage.getItem('teacher_langlist') || 'null') || DEFAULT_LANGUAGES.slice();
 
 const CATEGORIES = [
-  {id:'general', label:'🏗️ 共通'}, {id:'tamakake', label:'⛓️ 玉掛け'},
-  {id:'gas', label:'🔥 ガス溶接'}, {id:'arc', label:'⚡ アーク溶接'},
-  {id:'vehicle', label:'🚜 車両系'}, {id:'kouso', label:'🪜 高所作業車'},
-  {id:'forklift', label:'🏭 フォークリフト'}, {id:'crane', label:'🏗️ 小型クレーン'},
-  {id:'ashiba', label:'🧱 足場'}, {id:'harness', label:'🦺 フルハーネス'},
-  {id:'legal', label:'⚖️ 法的講習'}, {id:'police', label:'🚔 警察講習'},
-  {id:'fire', label:'🚒 消防講習'},
+  // 建設系（技能講習＋特別教育）
+  {id:'tamakake', group:'建設系', label:'⛓️ 玉掛け/クレーン', subs:['玉掛け','小型移動式クレーン運転','つり上げ荷重5トン未満クレーン']},
+  {id:'gas', group:'建設系', label:'🔥 ガス溶接', subs:['ガス溶接','アーク溶接等']},
+  {id:'kouso', group:'建設系', label:'🪜 高所作業車', subs:['高所作業車運転','高所作業車（10m未満）']},
+  {id:'vehicle', group:'建設系', label:'🚜 車両系', subs:['車両系建設機械（整地等）','小型車両系建設機械','締固め用機械（ローラー）']},
+  {id:'forklift', group:'建設系', label:'🏭 フォークリフト', subs:['フォークリフト運転']},
+  {id:'ashiba', group:'建設系', label:'🦺 足場/フルハーネス', subs:['足場の組立て','フルハーネス（墜落制止用器具）']},
+  {id:'other_const', group:'建設系', label:'🔧 その他建設', subs:['自由研削砥石','その他建設']},
+  // その他系
+  {id:'legal', group:'その他', label:'⚖️ 法的保護', subs:['法的保護講習']},
+  {id:'police_fire', group:'その他', label:'🚔 警察/消防', subs:['警察講習','消防講習']},
+  {id:'life', group:'その他', label:'🏠 生活説明', subs:['生活説明']},
 ];
 
 const CATEGORY_CONTEXT = {
-  general:'建設業全般の安全・作業用語（KY活動、保護具、リスクアセスメント、ヒヤリハット、労働安全衛生法）',
-  tamakake:'玉掛け作業（ワイヤーロープ、スリング、シャックル、フック、荷重計算、つり角度、安全荷重、モード係数）',
-  gas:'ガス溶接・切断（アセチレン、酸素、溶接棒、吹管、圧力調整器、逆火）',
-  arc:'アーク溶接（溶接電流、電圧、アーク長、スパッタ、被覆アーク溶接、炭酸ガスアーク溶接）',
-  vehicle:'車両系建設機械（ショベル、ブルドーザー、転倒防止、掘削、整地、地耐力、作業計画）',
-  kouso:'高所作業車（作業床、最大積載荷重、ブーム、アウトリガー、安全帯、墜落制止、過負荷防止装置）',
-  forklift:'フォークリフト（フォーク、マスト、チルト、荷役、荷重中心、最大荷重、ヘッドガード）',
-  crane:'移動式クレーン（定格荷重、作業半径、ブーム長、アウトリガー、過負荷防止、巻過防止、玉掛け）',
-  ashiba:'足場（単管足場、枠組足場、手すり、幅木、足場板、壁つなぎ、筋交、養生シート）',
-  harness:'フルハーネス（ランヤード、フック、D環、落下距離、ショックアブソーバー、作業前点検、廃棄基準）',
-  legal:'法的講習・法令関連（労働安全衛生法、労働基準法、コンプライアンス、ハラスメント防止、個人情報保護、就業規則）',
-  police:'警察講習・防犯安全（不審者対応、緊急連絡、事故報告、交通安全、防犯対策、警察連携）',
-  fire:'消防講習・防災安全（火災予防、消火器使用、避難誘導、防火管理、緊急対応、救急処置）',
+  tamakake:'玉掛け・小型移動式クレーン・つり上げ5トン未満クレーン（ワイヤーロープ、スリング、シャックル、フック、荷重計算、つり角度、安全荷重、定格荷重、作業半径、ブーム長、アウトリガー、過負荷防止、巻過防止）',
+  gas:'ガス溶接・アーク溶接等（アセチレン、酸素、溶接棒、吹管、圧力調整器、逆火、溶接電流、電圧、アーク長、スパッタ、被覆アーク溶接、炭酸ガスアーク溶接）',
+  kouso:'高所作業車（作業床、最大積載荷重、ブーム、アウトリガー、安全帯、墜落制止、過負荷防止装置、10m未満）',
+  vehicle:'車両系建設機械・整地等・小型・締固めローラー（ショベル、ブルドーザー、転倒防止、掘削、整地、運搬、積込み、地耐力、作業計画、ローラー）',
+  forklift:'フォークリフト（フォーク、マスト、チルト、荷役、荷重中心、最大荷重、ヘッドガード、バックレスト）',
+  ashiba:'足場・フルハーネス（単管足場、枠組足場、手すり、幅木、足場板、壁つなぎ、筋交、ランヤード、フック、D環、落下距離、ショックアブソーバー、作業前点検）',
+  other_const:'自由研削砥石・その他建設作業（研削盤、砥石、カバー、試運転、保護具、安全作業）',
+  legal:'法的保護講習・法令関連（労働安全衛生法、労働基準法、コンプライアンス、ハラスメント防止、個人情報保護、就業規則、権利義務）',
+  police_fire:'警察講習・消防講習（不審者対応、緊急連絡、事故報告、交通安全、防犯対策、火災予防、消火器使用、避難誘導、防火管理、救急処置）',
+  life:'生活説明（日本での生活ルール、ごみ分別、公共交通、医療、銀行、買い物、近隣マナー、緊急時対応）',
 };
 
 const MODEL_IDS = { sonnet: 'claude-sonnet-4-6', haiku: 'claude-haiku-4-5-20251001' };
@@ -251,7 +255,7 @@ let apiKey = localStorage.getItem('teacher_api_key') || '';
 let useServerKey = false;
 let serverConfig = { anthropic:false, passphrase_required:false };
 let selectedLangs = new Set(JSON.parse(localStorage.getItem('teacher_langs') || '["id","tl","ne"]'));
-let selectedCategory = localStorage.getItem('teacher_cat') || 'general';
+let selectedCategory = localStorage.getItem('teacher_cat') || 'tamakake';
 let model = localStorage.getItem('teacher_model') || 'haiku';
 let autoDelay = parseFloat(localStorage.getItem('teacher_delay') || '0.1');
 // 講習種別ごとの辞書・用語集（サーバーから読み込み）
@@ -357,8 +361,7 @@ async function loadServer() {
       catContext = d.catContext || {};
       if (d.langList && d.langList.length) { LANGUAGES = d.langList; localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES)); }
       // 旧形式（単一dict/context）を共通カテゴリに移行
-      if ((!catDict.general || !catDict.general.length) && d.dict && d.dict.length) catDict.general = d.dict;
-      if ((!catContext.general) && d.context) catContext.general = d.context;
+      // 旧形式(dict/context)は使わない（新構成に移行済み）
       renderDict(); renderCtx(); renderLangChips();
     }
   } catch(e) {}
@@ -374,9 +377,17 @@ async function saveServer() {
 
 // 講習種別
 function renderCats() {
-  document.getElementById('catRow').innerHTML = CATEGORIES.map(c =>
-    `<button class="cat-btn ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
-  ).join('');
+  const groups = ['建設系','その他'];
+  let html = '';
+  groups.forEach(g => {
+    const items = CATEGORIES.filter(c => c.group === g);
+    html += `<span class="cat-group-label">${g}</span>`;
+    html += items.map(c =>
+      `<button class="cat-btn ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
+    ).join('');
+    if (g === '建設系') html += '<span class="cat-group-sep"></span>';
+  });
+  document.getElementById('catRow').innerHTML = html;
 }
 function selectCat(id) {
   selectedCategory = id;
@@ -455,8 +466,6 @@ function renderDict() {
 function applyDict(text) {
   let r = text;
   (catDict[selectedCategory]||[]).forEach(e => { r = r.split(e.wrong).join(e.correct); });
-  // 共通辞書も適用
-  if (selectedCategory !== 'general') (catDict.general||[]).forEach(e => { r = r.split(e.wrong).join(e.correct); });
   return r;
 }
 
