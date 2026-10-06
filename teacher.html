@@ -189,6 +189,22 @@
       <span class="bar-label" id="ctxStatus" style="color:var(--success)"></span>
     </div>
   </div>
+
+  <!-- データ管理 -->
+  <div class="bar" style="flex-direction:column;align-items:stretch;gap:8px;border-top:1px solid #222;">
+    <span class="bar-label" style="color:var(--accent);font-weight:700;">📁 データ管理</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <span class="bar-label">文字起こし：</span>
+      <button class="btn-mini" onclick="downloadTranscript()">⬇ 今日の文字起こしを保存</button>
+      <span class="bar-label" style="color:#555;">（選択中の講習・本日分）</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <span class="bar-label">辞書・用語集：</span>
+      <button class="btn-mini" onclick="downloadSettings()">⬇ バックアップ保存</button>
+      <label class="btn-mini">⬆ 読み込み（復元・統合）<input type="file" accept=".json" style="display:none" onchange="uploadSettings(event)"></label>
+      <span class="bar-label" id="dataMsg" style="color:var(--success)"></span>
+    </div>
+  </div>
 </div>
 
 <div class="content">
@@ -266,6 +282,8 @@ const MAX_HISTORY = 10;
 let isTranslating = false;
 let idleTimer = null;
 let ws = null;
+// 文字起こしの蓄積（{ "2026-10-06": { "tamakake": [ {time, ja} ... ] } }）
+let transcriptLog = JSON.parse(localStorage.getItem('teacher_tlog') || '{}');
 
 function apiUrl(path) {
   return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}${path}`;
@@ -528,6 +546,7 @@ async function doTranslate() {
   if (history.length > MAX_HISTORY) history.pop();
   renderHistory();
   sendJa('add', entry.id, text); // 受講者ページへ日本語を配信（並列翻訳）
+  logTranscript(text); // 文字起こしを蓄積
 
   const ctxText = (catContext[selectedCategory] || '').slice(0, 2000);
   const ctxHint = CATEGORY_CONTEXT[selectedCategory] || '';
@@ -830,6 +849,106 @@ ${text}`;
     return data.content.map(b => b.text || '').join('').trim();
   }
   return '(応答なし)';
+}
+
+
+// 文字起こしを日付×講習種別ごとに蓄積
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function logTranscript(text) {
+  const day = todayStr();
+  if (!transcriptLog[day]) transcriptLog[day] = {};
+  if (!transcriptLog[day][selectedCategory]) transcriptLog[day][selectedCategory] = [];
+  const d = new Date();
+  const t = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+  transcriptLog[day][selectedCategory].push({ time: t, ja: text });
+  // localStorageは容量制限があるので直近7日分だけ保持
+  const days = Object.keys(transcriptLog).sort();
+  while (days.length > 7) { delete transcriptLog[days.shift()]; }
+  try { localStorage.setItem('teacher_tlog', JSON.stringify(transcriptLog)); } catch(e) {}
+}
+
+// 今日の文字起こしをダウンロード
+function downloadTranscript() {
+  const day = todayStr();
+  const catName = (CATEGORIES.find(c=>c.id===selectedCategory)?.label || selectedCategory).replace(/[^\p{L}\p{N}]/gu,'');
+  const entries = (transcriptLog[day] && transcriptLog[day][selectedCategory]) || [];
+  if (!entries.length) { alert('本日・この講習の文字起こしがまだありません'); return; }
+  const cat = CATEGORIES.find(c=>c.id===selectedCategory);
+  let txt = `講習日: ${day}\n講習区分: ${cat?cat.label:selectedCategory}\n`;
+  if (cat && cat.subs) txt += `対象講習（候補）: ${cat.subs.join(' / ')}\n`;
+  txt += `件数: ${entries.length}\n`;
+  txt += '='.repeat(40) + '\n\n';
+  entries.forEach(e => { txt += `[${e.time}] ${e.ja}\n`; });
+  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${day}_${catName}.txt`;
+  a.click();
+}
+
+// 辞書・用語集をバックアップ（JSON）
+function downloadSettings() {
+  const data = { version: 1, exported: new Date().toISOString(), catDict, catContext, langList: LANGUAGES };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `通訳設定バックアップ_${todayStr()}.json`;
+  a.click();
+  const m = document.getElementById('dataMsg'); m.textContent='✓ 保存しました'; setTimeout(()=>{m.textContent='';},2500);
+}
+
+// 辞書・用語集を読み込み（復元＋統合、重複整理）
+function uploadSettings(ev) {
+  const f = ev.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      // 辞書の統合（誤→正 完全一致は1つに、誤同じ・正違いは両方残す）
+      if (data.catDict) {
+        Object.keys(data.catDict).forEach(cat => {
+          if (!catDict[cat]) catDict[cat] = [];
+          data.catDict[cat].forEach(np => {
+            const exists = catDict[cat].some(e => e.wrong===np.wrong && e.correct===np.correct);
+            if (!exists) catDict[cat].push({ wrong: np.wrong, correct: np.correct });
+          });
+        });
+      }
+      // 用語集の統合（既存が空ならそのまま入れる、あれば結合して重複行を除く）
+      if (data.catContext) {
+        Object.keys(data.catContext).forEach(cat => {
+          const incoming = (data.catContext[cat]||'').trim();
+          if (!incoming) return;
+          const cur = (catContext[cat]||'').trim();
+          if (!cur) { catContext[cat] = incoming; }
+          else {
+            // 行単位で重複を除いて結合
+            const set = new Set(cur.split('\n').map(s=>s.trim()).filter(Boolean));
+            incoming.split('\n').map(s=>s.trim()).filter(Boolean).forEach(l=>set.add(l));
+            catContext[cat] = [...set].join('\n');
+          }
+        });
+      }
+      // 言語リスト（既存になければ追加）
+      if (data.langList && data.langList.length) {
+        data.langList.forEach(nl => {
+          if (!LANGUAGES.some(l=>l.code===nl.code || l.name===nl.name)) LANGUAGES.push(nl);
+        });
+        localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES));
+        renderLangChips();
+      }
+      renderDict(); renderCtx();
+      saveServer();
+      const m = document.getElementById('dataMsg'); m.textContent='✓ 読み込み・統合しました'; setTimeout(()=>{m.textContent='';},3000);
+    } catch(err) {
+      alert('ファイルの読み込みに失敗しました（形式が違う可能性があります）');
+    }
+  };
+  r.readAsText(f, 'UTF-8');
+  ev.target.value = '';
 }
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
