@@ -978,7 +978,7 @@ function uploadSettings(ev) {
         localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES));
         renderLangChips();
       }
-      renderDict(); renderCtx();
+      renderDict(); renderCtx(); renderTaiyaku();
       saveServer();
       const m = document.getElementById('dataMsg'); m.textContent='✓ 読み込み・統合しました'; setTimeout(()=>{m.textContent='';},3000);
     } catch(err) {
