@@ -101,6 +101,7 @@
   body[data-size="xl"] .hist-ja { font-size: 22px; }
   .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -195,6 +196,7 @@
       <span class="bar-label" id="taiyakuCount" style="color:var(--text)"></span>
       <button class="btn-mini" onclick="addTaiyakuTerm()">＋用語を追加</button>
       <button class="btn-mini" onclick="aiFillTaiyaku()">🤖 AIで未訳を一括翻訳</button>
+      <button class="btn-mini" onclick="exportTaiyakuExcel()">📊 確認用エクセル出力</button>
       <span class="bar-label" id="taiyakuMsg" style="color:var(--success)"></span>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px;">
@@ -1068,7 +1070,7 @@ async function aiFillTaiyaku() {
         const arr = JSON.parse(m[0]);
         arr.forEach(item => {
           const row = rows.find(r => r.ja === item.ja);
-          if (row) LANGUAGES.forEach(l => { if (!row[l.code] && item[l.code]) row[l.code] = item[l.code]; });
+          if (row) LANGUAGES.forEach(l => { if (!row[l.code] && item[l.code]) { row[l.code] = item[l.code]; delete row['back_'+l.code]; } });
         });
         renderTaiyaku();
       }
@@ -1077,6 +1079,80 @@ async function aiFillTaiyaku() {
   }
   msg.textContent = `✓ 完了（${targets.length}語）`;
   saveServer();
+  setTimeout(()=>{ msg.textContent=''; }, 3000);
+}
+
+// 確認用エクセル出力：各言語を日本語へ逆翻訳（日本語→その言語→日本語）して確認列を作る。
+// 逆翻訳はキャッシュ（back_<code>）し、用語を変えた（訳を入れ直した）ときだけ作り直す。
+async function exportTaiyakuExcel() {
+  if (typeof XLSX === 'undefined') { alert('エクセル部品の読み込み中です。少し待って再度押してください。'); return; }
+  const rows = currentTaiyaku();
+  if (!rows.length) { alert('この講習の対訳表が空です。先に用語を追加・翻訳してください。'); return; }
+  const langs = LANGUAGES;
+  const catName = (CATEGORIES.find(c=>c.id===selectedCategory)?.label || selectedCategory).replace(/[^\p{L}\p{N}]/gu,'');
+  const msg = document.getElementById('taiyakuMsg');
+
+  // 逆翻訳が要るセル（訳はあるが back_ が無い）を集める
+  const need = [];
+  rows.forEach(r => langs.forEach(l => {
+    if (r[l.code] && !r['back_'+l.code]) need.push({ r, code: l.code, name: l.name, val: r[l.code] });
+  }));
+
+  if (need.length && !apiKey && !useServerKey) { alert('APIキーが設定されていません（逆翻訳に必要です）'); return; }
+
+  // 8件ずつ逆翻訳
+  const BATCH = 8;
+  let done = 0;
+  for (let i = 0; i < need.length; i += BATCH) {
+    const batch = need.slice(i, i+BATCH);
+    msg.textContent = `逆翻訳中... ${done}/${need.length}`;
+    const items = batch.map((b, j) => `${j}: [${b.name}] ${b.val}`).join('\n');
+    const prompt = `次の各行は、ある言語の単語・用語です。それぞれを日本語に訳してください（逆翻訳の確認用）。
+${items}
+
+各行の番号をキーに、日本語訳のみをJSONで返してください。説明不要、JSONのみ:
+{"0":"日本語訳","1":"日本語訳",...}`;
+    try {
+      const res = await fetch(apiUrl('/api'), {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ api_key:(useServerKey?'':apiKey), passphrase, model: MODEL_IDS.sonnet, max_tokens: 2000, messages:[{role:'user',content:prompt}] })
+      });
+      const data = await res.json();
+      let out = '';
+      if (data.content && data.content.length) out = data.content.map(b=>b.text||'').join('');
+      const m = out.match(/\{[\s\S]*\}/);
+      if (m) {
+        const obj = JSON.parse(m[0]);
+        batch.forEach((b, j) => { if (obj[j] != null) b.r['back_'+b.code] = String(obj[j]); });
+      }
+    } catch(e) { console.log('逆翻訳エラー:', e); }
+    done += batch.length;
+  }
+  if (need.length) { saveServer(); }
+  msg.textContent = 'エクセル作成中...';
+
+  // ヘッダ：No / 日本語 / フリガナ / 各言語 / 各言語→日本語（確認）
+  const header = ['No', '日本語', 'フリガナ'];
+  langs.forEach(l => header.push(`${l.name}`));
+  langs.forEach(l => header.push(`${l.name}→日本語（確認）`));
+  const aoa = [header];
+  rows.forEach((r, i) => {
+    const line = [i+1, r.ja, r.furi || ''];
+    langs.forEach(l => line.push(r[l.code] || ''));
+    langs.forEach(l => line.push(r['back_'+l.code] || ''));
+    aoa.push(line);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // 列幅：日本語・確認列を広めに
+  const cols = [{wch:4},{wch:16},{wch:14}];
+  langs.forEach(()=>cols.push({wch:16}));
+  langs.forEach(()=>cols.push({wch:18}));
+  ws['!cols'] = cols;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '対訳表');
+  XLSX.writeFile(wb, `対訳表_${catName}_${todayStr()}.xlsx`);
+  msg.textContent = `✓ エクセル出力（${rows.length}語）`;
   setTimeout(()=>{ msg.textContent=''; }, 3000);
 }
 
