@@ -580,8 +580,9 @@ async function doTranslate() {
   const catName = CATEGORIES.find(c=>c.id===selectedCategory)?.label || '';
   const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
   const ctxNote = ctxText ? `\n\n【参考用語集】\n${ctxText}` : '';
+  const taiyakuNote = taiyakuHint(text, langs);
   const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
-講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}
+講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}${taiyakuNote}
 
 日本語:「${text}」
 
@@ -755,8 +756,9 @@ async function retranslate(item) {
   const catName = CATEGORIES.find(c=>c.id===selectedCategory)?.label || '';
   const langList = langs.map(l => `- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
   const ctxNote = ctxText ? `\n\n【参考用語集】\n${ctxText}` : '';
+  const taiyakuNote = taiyakuHint(text, langs);
   const prompt = `建設業技能講習の専門翻訳者として翻訳してください。
-講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}
+講習: ${catName} / 用語分野: ${ctxHint}${ctxNote}${taiyakuNote}
 
 日本語:「${text}」
 
@@ -810,7 +812,8 @@ ${langList}
 // 受講者ページへ「確定した日本語」を配信（各ページが自分で翻訳する）
 function sendJa(action, id, ja) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'ja', action, id, ja }));
+  // cat（講習ID）も送る：受講者ページが対訳表を参照できるように
+  ws.send(JSON.stringify({ type: 'ja', action, id, ja, cat: selectedCategory }));
 }
 // 互換のため残す（言語変更時などは何もしない：各ページが自分の言語を持つ）
 function broadcastHistory() {}
@@ -992,6 +995,21 @@ function uploadSettings(ev) {
 
 // ===== 対訳表 =====
 function currentTaiyaku() { return catTaiyaku[selectedCategory] || (catTaiyaku[selectedCategory] = []); }
+
+// 入力文に含まれる対訳表の用語を拾い、翻訳プロンプトに渡す参考（ゆるい強制力）
+function taiyakuHint(text, langs) {
+  const rows = catTaiyaku[selectedCategory] || [];
+  if (!rows.length) return '';
+  const hits = rows.filter(r => r.ja && text.includes(r.ja))
+                   .sort((a,b) => b.ja.length - a.ja.length)
+                   .slice(0, 20);
+  const lines = hits.map(r => {
+    const parts = langs.map(l => r[l.code] ? `${l.code}=${r[l.code]}` : null).filter(Boolean);
+    return parts.length ? `・${r.ja} → ${parts.join(' / ')}` : null;
+  }).filter(Boolean);
+  if (!lines.length) return '';
+  return `\n\n【決められた訳語（下記の用語はできるだけこの訳を使う）】\n${lines.join('\n')}`;
+}
 
 function renderTaiyaku() {
   const list = document.getElementById('taiyakuList');

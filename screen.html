@@ -125,6 +125,7 @@ let apiKey = localStorage.getItem('screen_api_key') || '';
 let useServerKey = false;
 let selectedLangs = new Set(JSON.parse(localStorage.getItem('screen_langs') || '["tl","id","my"]'));
 let history = [];
+let catTaiyaku = {};   // 講習ごとの対訳表（サーバーから取得）
 const MAX_HISTORY = 8;
 
 function apiUrl(path){ return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}${path}`; }
@@ -144,7 +145,7 @@ async function checkConfig(){
   try{ const res=await fetch(apiUrl(`/config?passphrase=${encodeURIComponent(passphrase)}`)); if(res.ok){ const c=await res.json(); if(c.anthropic) useServerKey=true; } }catch(e){}
   updateKeyStatus();
   // 講師が編集した言語リストをサーバーから取得
-  try{ const res=await fetch(apiUrl('/settings')); if(res.ok){ const d=await res.json(); if(d.langList && d.langList.length){ LANGUAGES=d.langList; LANG_MAP=Object.fromEntries(LANGUAGES.map(l=>[l.code,l])); localStorage.setItem('screen_langlist',JSON.stringify(LANGUAGES)); renderLangChips(); } } }catch(e){}
+  try{ const res=await fetch(apiUrl('/settings')); if(res.ok){ const d=await res.json(); if(d.langList && d.langList.length){ LANGUAGES=d.langList; LANG_MAP=Object.fromEntries(LANGUAGES.map(l=>[l.code,l])); localStorage.setItem('screen_langlist',JSON.stringify(LANGUAGES)); renderLangChips(); } if(d.catTaiyaku) catTaiyaku=d.catTaiyaku; } }catch(e){}
 }
 
 function renderLangChips(){
@@ -172,20 +173,29 @@ function connectWS(){
       const data=JSON.parse(e.data);
       if(data.type!=='ja') return;
       if(data.action==='add'){
-        const item={ id:data.id, ja:data.ja, translations:{}, loading:true };
+        const item={ id:data.id, ja:data.ja, cat:data.cat||'', translations:{}, loading:true };
         history.unshift(item);
         if(history.length>MAX_HISTORY) history.pop();
         render();
         translateItem(item);
       } else if(data.action==='edit'){
         let item=history.find(h=>h.id===data.id);
-        if(item){ item.ja=data.ja; item.translations={}; item.loading=true; render(); translateItem(item); }
-        else { const ni={id:data.id,ja:data.ja,translations:{},loading:true}; history.unshift(ni); render(); translateItem(ni); }
+        if(item){ item.ja=data.ja; if(data.cat)item.cat=data.cat; item.translations={}; item.loading=true; render(); translateItem(item); }
+        else { const ni={id:data.id,ja:data.ja,cat:data.cat||'',translations:{},loading:true}; history.unshift(ni); render(); translateItem(ni); }
       } else if(data.action==='delete'){
         history=history.filter(h=>h.id!==data.id); render();
       }
     }catch(err){}
   };
+}
+
+// 入力文に含まれる対訳表の用語を参考として渡す（ゆるい強制力）
+function taiyakuHint(text, cat, langs){
+  const rows=(catTaiyaku[cat])||[];
+  if(!rows.length) return '';
+  const hits=rows.filter(r=>r.ja && text.includes(r.ja)).sort((a,b)=>b.ja.length-a.ja.length).slice(0,20);
+  const lines=hits.map(r=>{ const parts=langs.map(l=>r[l.code]?`${l.code}=${r[l.code]}`:null).filter(Boolean); return parts.length?`・${r.ja} → ${parts.join(' / ')}`:null; }).filter(Boolean);
+  return lines.length?`\n\n【決められた訳語（下記の用語はできるだけこの訳を使う）】\n${lines.join('\n')}`:'';
 }
 
 // 受け取った日本語を、このページの担当言語に翻訳
@@ -194,7 +204,8 @@ async function translateItem(item){
   if(!langs.length){ item.loading=false; render(); return; }
   if(!apiKey && !useServerKey){ item.loading=false; render(); return; }
   const langList=langs.map(l=>`- ${l.name}（${l.native}）: キー "${l.code}"`).join('\n');
-  const prompt=`建設業技能講習の専門翻訳者として翻訳してください。
+  const taiyakuNote=taiyakuHint(item.ja, item.cat, langs);
+  const prompt=`建設業技能講習の専門翻訳者として翻訳してください。${taiyakuNote}
 
 日本語:「${item.ja}」
 
