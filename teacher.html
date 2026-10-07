@@ -6,31 +6,31 @@
 <title>講師用 - 多言語通訳システム（Aqua Voice版）</title>
 <style>
   :root {
-    --bg: #000; --bg2: #0d0d0d; --bg3: #111;
-    --border: #222; --text: #eee; --text2: #666;
-    --accent: #f0a500; --success: #3fb950; --danger: #f85149;
+    --bg: #f4f6f9; --bg2: #ffffff; --bg3: #ffffff;
+    --border: #d9dee5; --text: #1b1f26; --text2: #6b7280;
+    --accent: #159a4e; --success: #1a9e4b; --danger: #d23b32;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body { font-family: 'Noto Sans JP','Noto Sans',sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
 
-  header { background: #080808; border-bottom: 2px solid var(--accent); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header { background: #ffffff; border-bottom: 2px solid var(--accent); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
   header h1 { font-size: 14px; font-weight: 700; color: var(--accent); }
   .hint { margin-left: auto; font-size: 11px; color: var(--text2); }
-  .settings-toggle-btn { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 4px 8px; font-size: 14px; cursor: pointer; margin-left: 8px; }
+  .settings-toggle-btn { background: #f0f2f5; border: 1px solid var(--border); color: #555; border-radius: 6px; padding: 4px 8px; font-size: 14px; cursor: pointer; margin-left: 8px; }
   .settings-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   /* 設定パネル */
-  #settingsPanel { display: none; background: #060606; border-bottom: 1px solid var(--border); max-height: 55vh; overflow-y: auto; }
-  .bar { padding: 8px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid #161616; }
+  #settingsPanel { display: none; background: #fafbfc; border-bottom: 1px solid var(--border); max-height: 55vh; overflow-y: auto; }
+  .bar { padding: 8px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid #eceef1; }
   .bar-label { font-size: 11px; color: var(--text2); white-space: nowrap; }
-  .api-input { background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 200px; }
-  .api-input::placeholder { color: #444; }
-  .btn-mini { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .api-input { background: #fff; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: monospace; width: 200px; }
+  .api-input::placeholder { color: #aab; }
+  .btn-mini { background: #f0f2f5; border: 1px solid var(--border); color: #555; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
   .btn-mini:hover { border-color: var(--accent); color: var(--accent); }
 
-  .lang-chip { display: flex; align-items: center; gap: 4px; background: #111; border: 1px solid #333; border-radius: 16px; padding: 3px 8px; cursor: pointer; user-select: none; font-size: 12px; color: #666; white-space: nowrap; }
-  .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(240,165,0,0.08); }
+  .lang-chip { display: flex; align-items: center; gap: 4px; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 3px 8px; cursor: pointer; user-select: none; font-size: 12px; color: #555; white-space: nowrap; }
+  .lang-chip.selected { border-color: var(--accent); color: var(--accent); background: rgba(224,137,0,0.10); font-weight: 700; }
   .lang-chip input { display: none; }
 
   .cat-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 16px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
@@ -48,13 +48,13 @@
   .sub-content { display: none; padding: 8px 14px; }
   .sub-content.active { display: block; }
   .dict-add-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-  .dict-input { flex: 1; min-width: 120px; background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
+  .dict-input { flex: 1; min-width: 120px; background: #fff; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
   .dict-list { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
-  .dict-item { display: flex; align-items: center; gap: 8px; background: #111; border: 1px solid #333; border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+  .dict-item { display: flex; align-items: center; gap: 8px; background: #f7f8fa; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 13px; }
   .dict-wrong { color: var(--danger); flex: 1; }
   .dict-correct { color: var(--success); flex: 1; }
   .dict-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 14px; }
-  .ctx-textarea { width: 100%; height: 90px; background: #111; border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 8px; font-size: 12px; font-family: inherit; resize: vertical; }
+  .ctx-textarea { width: 100%; height: 90px; background: #fff; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px; font-size: 12px; font-family: inherit; resize: vertical; }
 
   /* メイン */
   .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 10px; gap: 8px; min-height: 0; }
@@ -64,32 +64,32 @@
   .status-chip.ready { background: #1a3a1a; color: var(--success); }
   .status-chip.translating { background: #3a2f1a; color: var(--accent); }
 
-  #jaInput { width: 100%; min-height: 64px; background: #0a0a1a; border: 2px solid #2a2a4a; color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 22px; font-weight: 700; font-family: inherit; line-height: 1.4; resize: none; flex-shrink: 0; }
+  #jaInput { width: 100%; min-height: 64px; background: #fffdf8; border: 2px solid #cdd2da; color: #111; border-radius: 10px; padding: 12px 16px; font-size: 22px; font-weight: 700; font-family: inherit; line-height: 1.4; resize: none; flex-shrink: 0; }
   #jaInput:focus { outline: none; border-color: var(--accent); }
-  #jaInput::placeholder { color: #333; font-weight: 400; font-size: 15px; }
+  #jaInput::placeholder { color: #b5bac2; font-weight: 400; font-size: 15px; }
   .manual-row { display: flex; gap: 8px; flex-shrink: 0; }
   .btn { background: var(--accent); border: none; color: #000; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
   .btn-sub { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
 
   .history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 10px 0; min-height: 0; }
   .history-list::-webkit-scrollbar { width: 6px; }
-  .history-list::-webkit-scrollbar-track { background: #0a0a0a; }
-  .history-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
-  .hist-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex-shrink: 0; }
-  .hist-item.latest { border-color: var(--accent); background: #0d0d0d; }
-  .hist-ja { font-size: 15px; font-weight: 700; color: #bbb; margin-bottom: 8px; line-height: 1.4; }
+  .history-list::-webkit-scrollbar-track { background: #eceef1; }
+  .history-list::-webkit-scrollbar-thumb { background: #c2c7cf; border-radius: 3px; }
+  .hist-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .hist-item.latest { border-color: var(--accent); background: #fffaf0; }
+  .hist-ja { font-size: 15px; font-weight: 700; color: #555; margin-bottom: 8px; line-height: 1.4; }
   .hist-lang-row { display: flex; align-items: baseline; gap: 8px; margin-top: 5px; }
   .hist-flag { font-size: 16px; flex-shrink: 0; }
-  .hist-name { font-size: 11px; color: #444; width: 90px; flex-shrink: 0; }
-  .hist-text { font-size: 22px; color: #fff; line-height: 1.45; }
-  .hist-text.loading { color: #444; font-size: 14px; font-style: italic; }
+  .hist-name { font-size: 11px; color: #9aa0a8; width: 90px; flex-shrink: 0; }
+  .hist-text { font-size: 22px; color: #111; line-height: 1.45; }
+  .hist-text.loading { color: #aab; font-size: 14px; font-style: italic; }
   .hist-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
   .hist-head .hist-ja { margin-bottom: 0; flex: 1; cursor: pointer; }
   .hist-head .hist-ja:hover { color: var(--accent); }
   .hist-btns { display: flex; gap: 4px; flex-shrink: 0; }
-  .hist-edit { background: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .hist-edit { background: #f0f2f5; border: 1px solid var(--border); color: #555; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
   .hist-edit:hover { border-color: var(--accent); color: var(--accent); }
-  .edit-input { width: 70%; background: #111; border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 15px; font-family: inherit; }
+  .edit-input { width: 70%; background: #fff; border: 1px solid var(--accent); color: #111; border-radius: 6px; padding: 6px 10px; font-size: 15px; font-family: inherit; }
   /* 文字サイズ段階（履歴の翻訳文字） */
   body[data-size="s"] .hist-text { font-size: 18px; }
   body[data-size="m"] .hist-text { font-size: 22px; }
@@ -100,6 +100,30 @@
   body[data-size="l"] .hist-ja { font-size: 18px; }
   body[data-size="xl"] .hist-ja { font-size: 22px; }
   .empty-msg { color: var(--text2); font-size: 14px; text-align: center; padding: 30px; }
+
+  /* 設定選択画面 */
+  #setupScreen { flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start; padding: 24px 16px; }
+  .setup-card { background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 24px 26px; width: 100%; max-width: 720px; }
+  .setup-title { font-size: 15px; font-weight: 700; color: var(--text); margin: 6px 0 12px; }
+  .setup-title:not(:first-child) { margin-top: 22px; border-top: 1px solid #eef0f3; padding-top: 18px; }
+  .setup-cats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .setup-langs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .setup-lang { display: flex; align-items: center; gap: 6px; background: #fff; border: 1.5px solid var(--border); border-radius: 20px; padding: 7px 14px; cursor: pointer; user-select: none; font-size: 13px; color: #444; }
+  .setup-lang.selected { border-color: var(--accent); color: var(--accent); background: rgba(224,137,0,0.10); font-weight: 700; }
+  .setup-cat { background: #fff; border: 1.5px solid var(--border); color: #444; border-radius: 20px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .setup-cat.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+  .setup-actions { margin-top: 26px; display: flex; align-items: center; gap: 14px; }
+  .btn-start { background: var(--accent); border: none; color: #fff; border-radius: 10px; padding: 14px 40px; font-size: 18px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(224,137,0,0.3); }
+  .btn-start:disabled { background: #cfd3d9; box-shadow: none; cursor: not-allowed; }
+  .setup-msg { font-size: 12px; color: var(--danger); }
+  .setup-hint { font-size: 11px; color: var(--text2); font-weight: 400; margin-left: 8px; }
+
+  /* 翻訳画面の上部バー */
+  .top-cat { font-size: 14px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 16px; padding: 5px 14px; white-space: nowrap; }
+  .top-langs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .top-lang { font-size: 12px; color: var(--text); background: #eef1f5; border: 1px solid var(--border); border-radius: 14px; padding: 4px 10px; white-space: nowrap; }
+  .btn-end { background: #fff; border: 1.5px solid var(--danger); color: var(--danger); border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .btn-end:hover { background: var(--danger); color: #fff; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -223,14 +247,33 @@
   </div>
 </div>
 
-<div class="content">
+<!-- ① 講習・言語の選択画面 -->
+<div id="setupScreen">
+  <div class="setup-card">
+    <h2 class="setup-title">① 講習の種別を選ぶ</h2>
+    <div id="setupCatRow" class="setup-cats"></div>
+
+    <h2 class="setup-title">② 翻訳する言語を選ぶ<span class="setup-hint">最大3つまで</span></h2>
+    <div id="setupLangChips" class="setup-langs"></div>
+
+    <div class="setup-actions">
+      <button class="btn-start" id="startBtn" onclick="startSession()">▶ 始める</button>
+      <span class="setup-msg" id="setupMsg"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ② 翻訳画面 -->
+<div class="content" id="mainScreen" style="display:none;">
   <div class="toprow">
-    <span class="bar-label">講習種別：</span>
-    <div id="catRow" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
-    <span class="status-chip ready" id="statusChip">待機中</span>
+    <span class="top-cat" id="topCat"></span>
+    <div class="top-langs" id="topLangs"></div>
+    <button class="btn-mini" onclick="copyAudienceUrl()" title="受講者用ページのアドレスをコピー">🔗 受講者用アドレスをコピー</button>
+    <span class="status-chip ready" id="statusChip" style="margin-left:auto;">待機中</span>
+    <button class="btn-end" onclick="endSession()">■ 翻訳終了</button>
   </div>
 
-  <textarea id="jaInput" placeholder="ここにカーソルを置いてAqua Voiceで話してください。話し終わると自動で翻訳します。" autofocus></textarea>
+  <textarea id="jaInput" placeholder="ここにカーソルを置いてAqua Voiceで話してください。話し終わると自動で翻訳します。"></textarea>
 
   <div class="history-list" id="historyList">
     <div class="empty-msg">音声入力して話し終わると、ここに翻訳が表示されます</div>
@@ -407,7 +450,7 @@ async function loadServer() {
       if (d.langList && d.langList.length) { LANGUAGES = d.langList; localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES)); }
       // 旧形式（単一dict/context）を共通カテゴリに移行
       // 旧形式(dict/context)は使わない（新構成に移行済み）
-      renderDict(); renderCtx(); renderLangChips();
+      renderDict(); renderCtx(); renderLangChips(); renderCats(); renderSetupLangs(); updateTopBar();
     }
   } catch(e) {}
 }
@@ -421,23 +464,78 @@ async function saveServer() {
 }
 
 // 講習種別
+// 設定画面：講習種別ボタン
 function renderCats() {
+  const el = document.getElementById('setupCatRow');
+  if (!el) return;
   const groups = ['建設系','その他'];
   let html = '';
   groups.forEach(g => {
     const items = CATEGORIES.filter(c => c.group === g);
     html += `<span class="cat-group-label">${g}</span>`;
     html += items.map(c =>
-      `<button class="cat-btn ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
+      `<button class="setup-cat ${c.id===selectedCategory?'active':''}" onclick="selectCat('${c.id}')">${c.label}</button>`
     ).join('');
     if (g === '建設系') html += '<span class="cat-group-sep"></span>';
   });
-  document.getElementById('catRow').innerHTML = html;
+  el.innerHTML = html;
 }
 function selectCat(id) {
   selectedCategory = id;
   localStorage.setItem('teacher_cat', id);
-  renderCats(); renderDict(); renderCtx();
+  renderCats(); renderDict(); renderCtx(); updateTopBar();
+}
+
+// 設定画面：言語選択（最大3つ）
+function renderSetupLangs() {
+  const el = document.getElementById('setupLangChips');
+  if (!el) return;
+  el.innerHTML = LANGUAGES.map(l => {
+    const sel = selectedLangs.has(l.code);
+    return `<span class="setup-lang ${sel?'selected':''}" onclick="toggleLang('${l.code}', ${!sel})">${l.flag} ${l.name}</span>`;
+  }).join('');
+}
+
+// 翻訳画面の上部バー（講習1つ＋選択言語）
+function updateTopBar() {
+  const cat = CATEGORIES.find(c=>c.id===selectedCategory);
+  const tc = document.getElementById('topCat');
+  if (tc) tc.textContent = cat ? cat.label : '';
+  const tl = document.getElementById('topLangs');
+  if (tl) {
+    const langs = LANGUAGES.filter(l => selectedLangs.has(l.code));
+    tl.innerHTML = langs.map(l => `<span class="top-lang">${l.flag} ${l.name}</span>`).join('');
+  }
+}
+
+// 始める：翻訳画面へ
+function startSession() {
+  if (!selectedLangs.size) { document.getElementById('setupMsg').textContent = '翻訳する言語を1つ以上選んでください'; return; }
+  document.getElementById('setupMsg').textContent = '';
+  localStorage.setItem('teacher_cat', selectedCategory);
+  localStorage.setItem('teacher_langs', JSON.stringify([...selectedLangs]));
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('mainScreen').style.display = 'flex';
+  document.getElementById('settingsPanel').style.display = 'none';
+  updateTopBar();
+  setTimeout(()=>{ const i=document.getElementById('jaInput'); if(i) i.focus(); }, 50);
+}
+
+// 翻訳終了：選択画面へ戻る
+function endSession() {
+  document.getElementById('mainScreen').style.display = 'none';
+  document.getElementById('settingsPanel').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'flex';
+  renderCats(); renderSetupLangs();
+}
+
+// 受講者用ページのアドレスをコピー
+function copyAudienceUrl() {
+  const url = location.origin + '/screen.html';
+  navigator.clipboard.writeText(url).then(() => {
+    setStatus('ready', 'アドレスをコピーしました');
+    setTimeout(()=>setStatus('ready','待機中'), 2000);
+  }).catch(() => { prompt('このアドレスをコピーしてください：', url); });
 }
 
 // 言語チップ
@@ -486,7 +584,8 @@ function toggleLang(code, checked) {
     selectedLangs.add(code);
   } else selectedLangs.delete(code);
   localStorage.setItem('teacher_langs', JSON.stringify([...selectedLangs]));
-  renderLangChips();
+  renderLangChips(); renderSetupLangs(); updateTopBar();
+  const sm = document.getElementById('setupMsg'); if (sm) sm.textContent = '';
 }
 
 // 辞書
@@ -1018,18 +1117,18 @@ function renderTaiyaku() {
   document.getElementById('taiyakuCount').textContent = `この講習の対訳：${rows.length}語（${langs.length}言語）`;
   if (!rows.length) { list.innerHTML = '<div style="color:var(--text2);padding:8px;">対訳がまだありません。用語を追加するか、AIで作成してください。</div>'; return; }
   // ヘッダ
-  let html = '<table style="border-collapse:collapse;width:100%;"><tr style="position:sticky;top:0;background:#1a1a1a;">';
-  html += '<th style="padding:3px 5px;border:1px solid #333;color:#aaa;">日本語</th>';
-  langs.forEach(l => { html += `<th style="padding:3px 5px;border:1px solid #333;color:#aaa;white-space:nowrap;">${l.flag}${l.name}</th>`; });
-  html += '<th style="border:1px solid #333;"></th></tr>';
+  let html = '<table style="border-collapse:collapse;width:100%;"><tr style="position:sticky;top:0;background:#eef1f5;">';
+  html += '<th style="padding:3px 5px;border:1px solid #d9dee5;color:#555;">日本語</th>';
+  langs.forEach(l => { html += `<th style="padding:3px 5px;border:1px solid #d9dee5;color:#555;white-space:nowrap;">${l.flag}${l.name}</th>`; });
+  html += '<th style="border:1px solid #d9dee5;"></th></tr>';
   rows.forEach((r, i) => {
-    html += `<tr><td style="padding:3px 5px;border:1px solid #333;font-weight:700;color:#fff;white-space:nowrap;">${esc(r.ja)}</td>`;
+    html += `<tr><td style="padding:3px 5px;border:1px solid #d9dee5;font-weight:700;color:#111;white-space:nowrap;">${esc(r.ja)}</td>`;
     langs.forEach(l => {
       const v = r[l.code] || '';
-      const cls = v ? '#ddd' : '#a44';
-      html += `<td style="padding:3px 5px;border:1px solid #333;color:${cls};">${esc(v||'（未訳）')}</td>`;
+      const cls = v ? '#333' : '#d23b32';
+      html += `<td style="padding:3px 5px;border:1px solid #d9dee5;color:${cls};">${esc(v||'（未訳）')}</td>`;
     });
-    html += `<td style="border:1px solid #333;"><button class="dict-del" onclick="delTaiyakuTerm(${i})">✕</button></td></tr>`;
+    html += `<td style="border:1px solid #d9dee5;"><button class="dict-del" onclick="delTaiyakuTerm(${i})">✕</button></td></tr>`;
   });
   html += '</table>';
   list.innerHTML = html;
@@ -1204,7 +1303,7 @@ async function ensurePassphrase() {
 
 async function init() {
   const ok = await ensurePassphrase();
-  if (!ok) { document.body.innerHTML = '<div style="color:#eee;padding:40px;text-align:center;font-size:18px;">合言葉が必要です。再読み込みして入力してください。</div>'; return; }
+  if (!ok) { document.body.innerHTML = '<div style="color:#1b1f26;padding:40px;text-align:center;font-size:18px;">合言葉が必要です。再読み込みして入力してください。</div>'; return; }
   if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
   document.getElementById('delaySlider').value = autoDelay;
   document.getElementById('delayLabel').textContent = autoDelay.toFixed(1) + '秒';
@@ -1212,11 +1311,12 @@ async function init() {
   setSize(textSize);
   renderCats();
   renderLangChips();
+  renderSetupLangs();
   renderDict();
   renderCtx();
+  updateTopBar();
   loadServer();
   connectWS();
-  document.getElementById('jaInput').focus();
 }
 init();
 </script>
