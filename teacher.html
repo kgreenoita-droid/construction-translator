@@ -171,6 +171,7 @@
   <div class="sub-tabs">
     <button class="sub-tab active" onclick="switchSub('dict')">📖 辞書</button>
     <button class="sub-tab" onclick="switchSub('ctx')">📄 用語集</button>
+    <button class="sub-tab" onclick="switchSub('taiyaku')">🌐 対訳表</button>
   </div>
   <div class="sub-content active" id="sub-dict">
     <div class="dict-add-row">
@@ -188,6 +189,19 @@
       <button class="btn-mini" onclick="saveCtx()">✓ 保存</button>
       <span class="bar-label" id="ctxStatus" style="color:var(--success)"></span>
     </div>
+  </div>
+  <div class="sub-content" id="sub-taiyaku">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <span class="bar-label" id="taiyakuCount" style="color:var(--text)"></span>
+      <button class="btn-mini" onclick="addTaiyakuTerm()">＋用語を追加</button>
+      <button class="btn-mini" onclick="aiFillTaiyaku()">🤖 AIで未訳を一括翻訳</button>
+      <span class="bar-label" id="taiyakuMsg" style="color:var(--success)"></span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <input class="dict-input" id="newTaiyakuJa" placeholder="日本語の用語（例：玉掛け）" style="max-width:160px;" />
+      <input class="dict-input" id="newTaiyakuFuri" placeholder="フリガナ" style="max-width:120px;" />
+    </div>
+    <div id="taiyakuList" style="max-height:220px;overflow:auto;font-size:11px;"></div>
   </div>
 
   <!-- データ管理 -->
@@ -277,6 +291,8 @@ let autoDelay = parseFloat(localStorage.getItem('teacher_delay') || '0.1');
 // 講習種別ごとの辞書・用語集（サーバーから読み込み）
 let catDict = {};     // { categoryId: [ {wrong,correct}, ... ] }
 let catContext = {};  // { categoryId: "用語集テキスト" }
+const INIT_TAIYAKU = {"tamakake": [{"ja": "合図", "furi": "あいず", "zh": "信号", "en": "signal", "vi": "tín hiệu", "tl": "hudyat", "id": "aba-aba", "my": "အချက်ပြမှု", "ne": "संकेत", "si": "සංඥාව", "bn": "সংকেত", "km": "សញ្ញា"}, {"ja": "安全荷重", "furi": "あんぜんかじゅう", "zh": "安全载荷", "en": "safe working load", "vi": "tải trọng an toàn", "tl": "ligtas na karga", "id": "beban aman", "my": "လုံခြုံသောဝန်", "ne": "सुरक्षित भार", "si": "ආරක්ෂිත බරතැබීම", "bn": "নিরাপদ ভার", "km": "បន្ទុកសុវត្ថិភាព"}, {"ja": "安全係数", "furi": "あんぜんけいすう", "zh": "安全系数", "en": "safety factor", "vi": "hệ số an toàn", "tl": "safety factor", "id": "faktor keamanan", "my": "ဘေးကင်းရေးကိန်းဂဏန်း", "ne": "सुरक्षा गुणक", "si": "ආරක්ෂණ සාධකය", "bn": "নিরাপত্তা গুণক", "km": "កត្តាសុវត្ថិភាព"}, {"ja": "安全装置", "furi": "あんぜんそうち", "zh": "安全装置", "en": "safety device", "vi": "thiết bị an toàn", "tl": "kagamitang pangkaligtasan", "id": "alat pengaman", "my": "ဘေးကင်းရေးကိရိယာ", "ne": "सुरक्षा उपकरण", "si": "ආරක්ෂණ උපකරණය", "bn": "নিরাপত্তা যন্ত্র", "km": "ឧបករណ៍សុវត្ថិភាព"}, {"ja": "著しい形崩れ", "furi": "いちじるしいかたくずれ", "zh": "明显变形", "en": "significant deformation", "vi": "biến dạng đáng kể", "tl": "malinaw na pagkasira ng hugis", "id": "deformasi signifikan", "my": "သိသာသောပုံပျက်ခြင်း", "ne": "उल्लेखनीय विकृति", "si": "සැලකිය යුතු විරූපණය", "bn": "উল্লেখযোগ্য বিকৃতি", "km": "ការខូចទ្រង់ទ្រាយច្បាស់"}, {"ja": "一本つり", "furi": "いっぽんつり", "zh": "单点吊", "en": "single-point lift", "vi": "treo một điểm", "tl": "single-point na pagbuhat", "id": "angkat satu titik", "my": "တစ်မှတ်ဆွဲခြင်း", "ne": "एक बिन्दु उठाउने", "si": "තනි ලක්ෂ්‍ය එසවීම", "bn": "একক বিন্দু উত্তোলন", "km": "ការលើកចំណុចតែមួយ"}, {"ja": "介添えロープ", "furi": "かいぞえろーぷ", "zh": "辅助绳", "en": "tag line", "vi": "dây dẫn hướng", "tl": "tag line", "id": "tali pemandu", "my": "လမ်းညွှန်ကြိုး", "ne": "सहायक डोरी", "si": "මඟ පෙන්වන ලණුව", "bn": "গাইড দড়ি", "km": "ខ្សែនាំផ្លូវ"}, {"ja": "著しい腐食", "furi": "いちじるしいふしょく", "zh": "明显腐蚀", "en": "significant corrosion", "vi": "ăn mòn đáng kể", "tl": "malinaw na kalawang", "id": "korosi signifikan", "my": "သိသာသောသံချေးတက်ခြင်း", "ne": "उल्लेखनीय क्षरण", "si": "සැලකිය යුතු විඛාදනය", "bn": "উল্লেখযোগ্য ক্ষয়", "km": "ការច្រេះច្បាស់"}, {"ja": "滑車", "furi": "かっしゃ", "zh": "滑轮", "en": "pulley", "vi": "ròng rọc", "tl": "kalo", "id": "katrol", "my": "ကပ္ပိ", "ne": "कप्पी", "si": "කප්පිය", "bn": "কপিকল", "km": "រ៉ក"}, {"ja": "壁クレーン", "furi": "かべくれーん", "zh": "壁式起重机", "en": "wall crane", "vi": "cần trục gắn tường", "tl": "wall crane", "id": "derek dinding", "my": "နံရံကရိန်း", "ne": "भित्ता क्रेन", "si": "බිත්ති කරණය", "bn": "দেয়াল ক্রেন", "km": "ក្រេនជញ្ជាំង"}, {"ja": "過負荷防止装置", "furi": "かふかぼうしそうち", "zh": "过载保护装置", "en": "overload prevention device", "vi": "thiết bị chống quá tải", "tl": "overload prevention device", "id": "alat pencegah beban lebih", "my": "ဝန်ပိုကာကွယ်ကိရိယာ", "ne": "अधिभार रोकथाम उपकरण", "si": "අධිභාරය වැළැක්වීමේ උපකරණය", "bn": "অতিরিক্ত ভার প্রতিরোধক যন্ত্র", "km": "ឧបករណ៍ការពារការផ្ទុកលើស"}, {"ja": "繰返し荷重", "furi": "くりかえしかじゅう", "zh": "反复载荷", "en": "repeated load", "vi": "tải trọng lặp lại", "tl": "paulit-ulit na karga", "id": "beban berulang", "my": "ထပ်ခါထပ်ခါဝန်", "ne": "दोहोरिने भार", "si": "පුනරාවර්තන බර", "bn": "পুনরাবৃত্ত ভার", "km": "បន្ទុកដដែលៗ"}, {"ja": "クローラクレーン", "furi": "くろーらくれーん", "zh": "履带起重机", "en": "crawler crane", "vi": "cần trục bánh xích", "tl": "crawler crane", "id": "derek crawler", "my": "ခြေလှမ်းကရိန်း", "ne": "क्रलर क्रेन", "si": "ක්‍රෝලර් කරණය", "bn": "ক্রলার ক্রেন", "km": "ក្រេនខ្សែក្រវាត់"}, {"ja": "ケーブルクレーン", "furi": "けーぶるくれーん", "zh": "缆索起重机", "en": "cable crane", "vi": "cần trục cáp", "tl": "cable crane", "id": "derek kabel", "my": "ကြိုးကရိန်း", "ne": "केबल क्रेन", "si": "කේබල් කරණය", "bn": "কেবল ক্রেন", "km": "ក្រេនខ្សែកាប"}, {"ja": "作業範囲", "furi": "さぎょうはんい", "zh": "作业范围", "en": "working range", "vi": "phạm vi làm việc", "tl": "saklaw ng trabaho", "id": "jangkauan kerja", "my": "လုပ်ငန်းနယ်ပယ်", "ne": "कार्य दायरा", "si": "වැඩ පරාසය", "bn": "কাজের পরিসীমা", "km": "វិសាលភាពការងារ"}, {"ja": "作業半径", "furi": "さぎょうはんけい", "zh": "作业半径", "en": "working radius", "vi": "bán kính làm việc", "tl": "working radius", "id": "radius kerja", "my": "လုပ်ငန်းအချင်းဝက်", "ne": "कार्य त्रिज्या", "si": "වැඩ අරය", "bn": "কাজের ব্যাসার্ধ", "km": "កាំការងារ"}, {"ja": "ジブ", "furi": "じぶ", "zh": "吊臂", "en": "jib", "vi": "cần (jib)", "tl": "jib", "id": "jib", "my": "ဂျစ်ဘ်", "ne": "जिब", "si": "ජිබ්", "bn": "জিব", "km": "ជីប"}, {"ja": "ジブクレーン", "furi": "じぶくれーん", "zh": "动臂起重机", "en": "jib crane", "vi": "cần trục jib", "tl": "jib crane", "id": "derek jib", "my": "ဂျစ်ဘ်ကရိန်း", "ne": "जिब क्रेन", "si": "ජිබ් කරණය", "bn": "জিব ক্রেন", "km": "ក្រេនជីប"}, {"ja": "ジブ伏せ", "furi": "じぶふせ", "zh": "落臂", "en": "jib lowering", "vi": "hạ cần jib", "tl": "pagbaba ng jib", "id": "menurunkan jib", "my": "ဂျစ်ဘ်ချခြင်း", "ne": "जिब झार्ने", "si": "ජිබ් පහත් කිරීම", "bn": "জিব নামানো", "km": "ការបន្ទាបជីប"}, {"ja": "絞り", "furi": "しぼり", "zh": "缩径", "en": "necking (reduction)", "vi": "thắt (giảm tiết diện)", "tl": "necking", "id": "penyempitan", "my": "ကျုံ့ခြင်း", "ne": "खुम्चिने", "si": "හැකිලීම", "bn": "সংকোচন", "km": "ការរួម"}, {"ja": "重心", "furi": "じゅうしん", "zh": "重心", "en": "center of gravity", "vi": "trọng tâm", "tl": "sentro ng grabidad", "id": "titik berat", "my": "ဆွဲအားဗဟို", "ne": "गुरुत्व केन्द्र", "si": "ගුරුත්ව කේන්ද්‍රය", "bn": "ভারকেন্দ্র", "km": "ទីប្រជុំទម្ងន់"}, {"ja": "集中荷重", "furi": "しゅうちゅうかじゅう", "zh": "集中载荷", "en": "concentrated load", "vi": "tải trọng tập trung", "tl": "concentrated load", "id": "beban terpusat", "my": "စုစည်းဝန်", "ne": "केन्द्रित भार", "si": "සංකේන්ද්‍රිත බර", "bn": "কেন্দ্রীভূত ভার", "km": "បន្ទុកប្រមូលផ្តុំ"}, {"ja": "切断荷重", "furi": "せつだんかじゅう", "zh": "破断载荷", "en": "breaking load", "vi": "tải trọng đứt", "tl": "breaking load", "id": "beban putus", "my": "ပြတ်သည့်ဝန်", "ne": "टुट्ने भार", "si": "කැඩීමේ බර", "bn": "ছিঁড়ে যাওয়ার ভার", "km": "បន្ទុកដាច់"}, {"ja": "スリング", "furi": "すりんぐ", "zh": "吊索", "en": "sling", "vi": "dây treo (sling)", "tl": "sling", "id": "sling", "my": "သလင်း", "ne": "स्लिङ", "si": "ස්ලිං", "bn": "স্লিং", "km": "ខ្សែស្លីង"}, {"ja": "素線", "furi": "そせん", "zh": "钢丝", "en": "wire (strand element)", "vi": "sợi thép", "tl": "wire strand", "id": "kawat elemen", "my": "ဝါယာကြိုးမျှင်", "ne": "तार", "si": "කම්බි නූල්", "bn": "তার", "km": "សរសៃលួស"}, {"ja": "チェーンスリング", "furi": "ちぇーんすりんぐ", "zh": "链条吊索", "en": "chain sling", "vi": "dây xích treo", "tl": "chain sling", "id": "sling rantai", "my": "ကွင်းဆက်သလင်း", "ne": "चेन स्लिङ", "si": "දම්වැල් ස්ලිං", "bn": "চেইন স্লিং", "km": "ខ្សែស្លីងច្រវាក់"}, {"ja": "力の三要素", "furi": "ちからのさんようそ", "zh": "力的三要素", "en": "three elements of force", "vi": "ba yếu tố của lực", "tl": "tatlong elemento ng puwersa", "id": "tiga unsur gaya", "my": "အားသုံးချက်", "ne": "बलका तीन तत्व", "si": "බලයේ මූලද්‍රව්‍ය තුන", "bn": "বলের তিন উপাদান", "km": "ធាតុបីនៃកម្លាំង"}, {"ja": "地切り", "furi": "ちきり", "zh": "离地", "en": "ground clearance (initial lift)", "vi": "nhấc khỏi mặt đất", "tl": "pag-angat mula sa lupa", "id": "mengangkat dari tanah", "my": "မြေမှခွာခြင်း", "ne": "जमिनबाट उठाउने", "si": "බිමෙන් ඔසවීම", "bn": "মাটি থেকে ওঠানো", "km": "ការលើកចេញពីដី"}, {"ja": "張力係数", "furi": "ちょうりょくけいすう", "zh": "张力系数", "en": "tension coefficient", "vi": "hệ số lực căng", "tl": "tension coefficient", "id": "koefisien tegangan", "my": "ဆွဲအားကိန်း", "ne": "तनाव गुणक", "si": "ආතති සංගුණකය", "bn": "টান সহগ", "km": "មេគុណភាពតានតឹង"}, {"ja": "つり上げ荷重", "furi": "つりあげかじゅう", "zh": "起重载荷", "en": "lifting load", "vi": "tải trọng nâng", "tl": "lifting load", "id": "beban angkat", "my": "ဆွဲမြှောက်ဝန်", "ne": "उठाउने भार", "si": "එසවීමේ බර", "bn": "উত্তোলন ভার", "km": "បន្ទុកលើក"}, {"ja": "つり角度", "furi": "つりかくど", "zh": "吊角", "en": "sling angle", "vi": "góc treo", "tl": "sling angle", "id": "sudut angkat", "my": "ဆွဲထောင့်", "ne": "उठाउने कोण", "si": "එසවීමේ කෝණය", "bn": "স্লিং কোণ", "km": "មុំស្លីង"}, {"ja": "つり具", "furi": "つりぐ", "zh": "吊具", "en": "lifting gear", "vi": "dụng cụ treo", "tl": "lifting gear", "id": "alat angkat", "my": "ဆွဲကိရိယာ", "ne": "उठाउने उपकरण", "si": "එසවීමේ උපකරණ", "bn": "উত্তোলন সরঞ্জাম", "km": "ឧបករណ៍លើក"}, {"ja": "つりクランプ", "furi": "つりくらんぷ", "zh": "吊钳", "en": "lifting clamp", "vi": "kẹp nâng", "tl": "lifting clamp", "id": "klem angkat", "my": "ဆွဲညှပ်", "ne": "उठाउने क्ल्याम्प", "si": "එසවීමේ කලම්පය", "bn": "উত্তোলন ক্ল্যাম্প", "km": "គ្រឿងចាប់លើក"}, {"ja": "つりチェーン", "furi": "つりちぇーん", "zh": "吊链", "en": "lifting chain", "vi": "xích nâng", "tl": "lifting chain", "id": "rantai angkat", "my": "ဆွဲကွင်းဆက်", "ne": "उठाउने चेन", "si": "එසවීමේ දම්වැල", "bn": "উত্তোলন চেইন", "km": "ច្រវាក់លើក"}, {"ja": "力のモーメント", "furi": "ちからのもーめんと", "zh": "力矩", "en": "moment of force", "vi": "mô men lực", "tl": "moment of force", "id": "momen gaya", "my": "အားမိုမင့်", "ne": "बलको क्षण", "si": "බල ඝූර්ණය", "bn": "বলের ভ্রামক", "km": "ម៉ូម៉ង់កម្លាំង"}, {"ja": "つりビーム", "furi": "つりびーむ", "zh": "吊梁", "en": "lifting beam", "vi": "dầm nâng", "tl": "lifting beam", "id": "balok angkat", "my": "ဆွဲဘင်း", "ne": "उठाउने बिम", "si": "එසවීමේ බීම", "bn": "উত্তোলন বিম", "km": "ធ្នឹមលើក"}, {"ja": "定格荷重", "furi": "ていかくかじゅう", "zh": "额定载荷", "en": "rated load", "vi": "tải trọng định mức", "tl": "rated load", "id": "beban terukur", "my": "သတ်မှတ်ဝန်", "ne": "रेटेड भार", "si": "ශ්‍රේණිගත බර", "bn": "রেটেড ভার", "km": "បន្ទុកកំណត់"}, {"ja": "定格総荷重", "furi": "ていかくそうかじゅう", "zh": "额定总载荷", "en": "rated total load", "vi": "tổng tải trọng định mức", "tl": "rated total load", "id": "total beban terukur", "my": "သတ်မှတ်စုစုပေါင်းဝန်", "ne": "रेटेड कुल भार", "si": "ශ්‍රේණිගත මුළු බර", "bn": "রেটেড মোট ভার", "km": "បន្ទុកសរុបកំណត់"}, {"ja": "天井クレーン", "furi": "てんじょうくれーん", "zh": "桥式起重机", "en": "overhead crane", "vi": "cần trục trên cao", "tl": "overhead crane", "id": "derek atas (overhead)", "my": "အမိုးကရိန်း", "ne": "ओभरहेड क्रेन", "si": "උඩින් යන කරණය", "bn": "ওভারহেড ক্রেন", "km": "ក្រេនពីលើ"}, {"ja": "トラッククレーン", "furi": "とらっくくれーん", "zh": "汽车起重机", "en": "truck crane", "vi": "cần trục xe tải", "tl": "truck crane", "id": "derek truk", "my": "ထရပ်ကားကရိန်း", "ne": "ट्रक क्रेन", "si": "ට්‍රක් කරණය", "bn": "ট্রাক ক্রেন", "km": "ក្រេនឡាន"}, {"ja": "橋形クレーン", "furi": "はしがたくれーん", "zh": "门式起重机", "en": "gantry crane", "vi": "cần trục cổng", "tl": "gantry crane", "id": "derek gantry", "my": "တံတားပုံကရိန်း", "ne": "ग्यान्ट्री क्रेन", "si": "ගැන්ට්‍රි කරණය", "bn": "গ্যান্ট্রি ক্রেন", "km": "ក្រេនស្ពាន"}, {"ja": "外れ止め", "furi": "はずれとめ", "zh": "防脱装置", "en": "safety latch", "vi": "chốt an toàn", "tl": "safety latch", "id": "kait pengaman", "my": "ကျွတ်ထွက်ကာကွယ်", "ne": "सेफ्टी ल्याच", "si": "ආරක්ෂිත අගුල", "bn": "সেফটি ল্যাচ", "km": "គ្រឿងចាក់សុវត្ថិភាព"}, {"ja": "引込み", "furi": "ひきこみ", "zh": "变幅", "en": "luffing (jib retraction)", "vi": "kéo vào", "tl": "pag-urong", "id": "penarikan", "my": "ဆွဲသွင်းခြင်း", "ne": "भित्र तान्ने", "si": "ඇද ගැනීම", "bn": "টেনে আনা", "km": "ការទាញចូល"}, {"ja": "比重", "furi": "ひじゅう", "zh": "比重", "en": "specific gravity", "vi": "tỷ trọng", "tl": "specific gravity", "id": "berat jenis", "my": "သီးသန့်အလေးချိန်", "ne": "विशिष्ट गुरुत्व", "si": "විශිෂ්ට ගුරුත්වය", "bn": "আপেক্ষিক গুরুত্ব", "km": "ទម្ងន់ជាក់លាក់"}, {"ja": "服装", "furi": "ふくそう", "zh": "着装", "en": "work attire", "vi": "trang phục", "tl": "kasuotan", "id": "pakaian kerja", "my": "ဝတ်စားဆင်ယင်မှု", "ne": "पोशाक", "si": "ඇඳුම", "bn": "পোশাক", "km": "សម្លៀកបំពាក់"}, {"ja": "ベルトスリング", "furi": "べるとすりんぐ", "zh": "吊装带", "en": "belt sling", "vi": "dây đai treo", "tl": "belt sling", "id": "sling sabuk", "my": "ခါးပတ်သလင်း", "ne": "बेल्ट स्लिङ", "si": "පටි ස්ලිං", "bn": "বেল্ট স্লিং", "km": "ខ្សែស្លីងខ្សែក្រវាត់"}, {"ja": "巻上げ", "furi": "まきあげ", "zh": "卷扬", "en": "hoisting", "vi": "nâng lên (cuốn)", "tl": "pagbuhat (hoisting)", "id": "menggulung naik", "my": "ဆွဲတင်ခြင်း", "ne": "माथि उठाउने", "si": "ඔසවා ගැනීම", "bn": "উত্তোলন (হোইস্টিং)", "km": "ការលើកឡើង"}, {"ja": "巻下げ", "furi": "まきさげ", "zh": "下放", "en": "lowering", "vi": "hạ xuống", "tl": "pagbaba (lowering)", "id": "menurunkan", "my": "ဆွဲချခြင်း", "ne": "तल झार्ने", "si": "පහත් කිරීම", "bn": "নামানো (লোয়ারিং)", "km": "ការបន្ទាបចុះ"}, {"ja": "まくら", "furi": "まくら", "zh": "垫木", "en": "dunnage (support block)", "vi": "gối kê", "tl": "dunnage", "id": "balok ganjal", "my": "ခုံတုံး", "ne": "आधार काठ", "si": "ආධාරක කොට්ටය", "bn": "সাপোর্ট ব্লক", "km": "ឈើទ្រ"}, {"ja": "めっき", "furi": "めっき", "zh": "镀层", "en": "plating (coating)", "vi": "mạ", "tl": "plating", "id": "pelapisan", "my": "ရည်စိမ်ခြင်း", "ne": "प्लेटिङ", "si": "තහඩු ආලේපනය", "bn": "প্লেটিং", "km": "ការស្រោប"}, {"ja": "吊りクランプ", "furi": "つりくらんぷ", "zh": "吊钳", "en": "lifting clamp", "vi": "kẹp nâng", "tl": "lifting clamp", "id": "klem angkat", "my": "ဆွဲညှပ်", "ne": "उठाउने क्ल्याम्प", "si": "එසවීමේ කලම්පය", "bn": "উত্তোলন ক্ল্যাম্প", "km": "គ្រឿងចាប់លើក"}, {"ja": "呼出し", "furi": "よびだし", "zh": "呼叫", "en": "calling out", "vi": "gọi ra hiệu", "tl": "pagtawag", "id": "memanggil", "my": "ခေါ်ဆိုခြင်း", "ne": "बोलाउने", "si": "කැඳවීම", "bn": "ডাকা", "km": "ការហៅ"}, {"ja": "ラウンドスリング", "furi": "らうんどすりんぐ", "zh": "圆形吊装带", "en": "round sling", "vi": "dây treo tròn", "tl": "round sling", "id": "sling bundar", "my": "အဝိုင်းသလင်း", "ne": "राउन्ड स्लिङ", "si": "වටකුරු ස්ලිං", "bn": "রাউন্ড স্লিং", "km": "ខ្សែស្លីងមូល"}, {"ja": "両フック", "furi": "りょうふっく", "zh": "双钩", "en": "double hook", "vi": "móc đôi", "tl": "double hook", "id": "kait ganda", "my": "ချိတ်နှစ်ဖက်", "ne": "दोहोरो हुक", "si": "ද්විත්ව කොක්ක", "bn": "ডাবল হুক", "km": "ទំពក់ទ្វេ"}, {"ja": "ワイヤーロープ", "furi": "わいやーろーぷ", "zh": "钢丝绳", "en": "wire rope", "vi": "dây cáp thép", "tl": "wire rope", "id": "tali kawat baja", "my": "ဝါယာကြိုး", "ne": "तार डोरी", "si": "වයර් රෝප්", "bn": "তারের দড়ি", "km": "ខ្សែពួរដែក"}, {"ja": "キンク", "furi": "きんく", "zh": "扭结", "en": "kink", "vi": "xoắn gập (kink)", "tl": "kink", "id": "kekusutan (kink)", "my": "ကွေးကောက်ခြင်း", "ne": "किंक", "si": "ගැට ගැසීම", "bn": "কিংক", "km": "ការបត់"}, {"ja": "親", "furi": "おや", "zh": "主(指挥者)", "en": "lead worker (signaler)", "vi": "người chính (ra hiệu)", "tl": "pinunong manggagawa", "id": "pekerja utama", "my": "ဦးဆောင်သူ", "ne": "मुख्य कामदार", "si": "ප්‍රධාන සේවකයා", "bn": "প্রধান কর্মী", "km": "កម្មករនាំមុខ"}, {"ja": "子", "furi": "こ", "zh": "副(协助者)", "en": "assistant worker", "vi": "người phụ", "tl": "katulong na manggagawa", "id": "pekerja pembantu", "my": "အကူလုပ်သား", "ne": "सहायक कामदार", "si": "සහායක සේවකයා", "bn": "সহকারী কর্মী", "km": "កម្មករជំនួយ"}, {"ja": "技能講習", "furi": "ぎのうこうしゅう", "zh": "技能讲习", "en": "skill training course", "vi": "khóa đào tạo kỹ năng", "tl": "skill training course", "id": "kursus pelatihan keterampilan", "my": "ကျွမ်းကျင်မှုသင်တန်း", "ne": "सीप तालिम पाठ्यक्रम", "si": "කුසලතා පුහුණු පාඨමාලාව", "bn": "দক্ষতা প্রশিক্ষণ কোর্স", "km": "វគ្គបណ្តុះបណ្តាលជំនាញ"}, {"ja": "特別教育", "furi": "とくべつきょういく", "zh": "特别教育", "en": "special education (safety)", "vi": "giáo dục đặc biệt", "tl": "special education", "id": "pendidikan khusus", "my": "အထူးသင်ကြားမှု", "ne": "विशेष शिक्षा", "si": "විශේෂ අධ්‍යාපනය", "bn": "বিশেষ শিক্ষা", "km": "ការអប់រំពិសេស"}]};
+let catTaiyaku = {};  // { categoryId: [ {ja,furi,zh,en,...} ] } 対訳表
 let history = [];
 const MAX_HISTORY = 10;
 let isTranslating = false;
@@ -317,9 +333,11 @@ function toggleSettings() {
   p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
 }
 function switchSub(tab) {
-  document.querySelectorAll('.sub-tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='dict')||(i===1&&tab==='ctx')));
+  document.querySelectorAll('.sub-tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='dict')||(i===1&&tab==='ctx')||(i===2&&tab==='taiyaku')));
   document.getElementById('sub-dict').classList.toggle('active', tab==='dict');
   document.getElementById('sub-ctx').classList.toggle('active', tab==='ctx');
+  document.getElementById('sub-taiyaku').classList.toggle('active', tab==='taiyaku');
+  if (tab==='taiyaku') renderTaiyaku();
 }
 function updateDelay(val) {
   autoDelay = parseFloat(val);
@@ -377,6 +395,9 @@ async function loadServer() {
       const d = await res.json();
       catDict = d.catDict || {};
       catContext = d.catContext || {};
+      catTaiyaku = d.catTaiyaku || {};
+      // 対訳表が空なら初期データ（玉掛け）を入れる
+      if (!catTaiyaku.tamakake && INIT_TAIYAKU.tamakake) catTaiyaku.tamakake = INIT_TAIYAKU.tamakake;
       if (d.langList && d.langList.length) { LANGUAGES = d.langList; localStorage.setItem('teacher_langlist', JSON.stringify(LANGUAGES)); }
       // 旧形式（単一dict/context）を共通カテゴリに移行
       // 旧形式(dict/context)は使わない（新構成に移行済み）
@@ -388,7 +409,7 @@ async function saveServer() {
   try {
     await fetch(apiUrl('/settings'), {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ catDict, catContext, langList: LANGUAGES })
+      body: JSON.stringify({ catDict, catContext, catTaiyaku, langList: LANGUAGES })
     });
   } catch(e) { console.log('保存エラー:', e); }
 }
@@ -891,7 +912,7 @@ function downloadTranscript() {
 
 // 辞書・用語集をバックアップ（JSON）
 function downloadSettings() {
-  const data = { version: 1, exported: new Date().toISOString(), catDict, catContext, langList: LANGUAGES };
+  const data = { version: 1, exported: new Date().toISOString(), catDict, catContext, catTaiyaku, langList: LANGUAGES };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -932,6 +953,17 @@ function uploadSettings(ev) {
           }
         });
       }
+      // 対訳表の統合（同じ日本語は上書き、新規は追加）
+      if (data.catTaiyaku) {
+        Object.keys(data.catTaiyaku).forEach(cat => {
+          if (!catTaiyaku[cat]) catTaiyaku[cat] = [];
+          data.catTaiyaku[cat].forEach(np => {
+            const idx = catTaiyaku[cat].findIndex(e => e.ja === np.ja);
+            if (idx >= 0) catTaiyaku[cat][idx] = np;
+            else catTaiyaku[cat].push(np);
+          });
+        });
+      }
       // 言語リスト（既存になければ追加）
       if (data.langList && data.langList.length) {
         data.langList.forEach(nl => {
@@ -949,6 +981,103 @@ function uploadSettings(ev) {
   };
   r.readAsText(f, 'UTF-8');
   ev.target.value = '';
+}
+
+
+// ===== 対訳表 =====
+function currentTaiyaku() { return catTaiyaku[selectedCategory] || (catTaiyaku[selectedCategory] = []); }
+
+function renderTaiyaku() {
+  const list = document.getElementById('taiyakuList');
+  const rows = currentTaiyaku();
+  const langs = LANGUAGES; // 全登録言語
+  document.getElementById('taiyakuCount').textContent = `この講習の対訳：${rows.length}語（${langs.length}言語）`;
+  if (!rows.length) { list.innerHTML = '<div style="color:var(--text2);padding:8px;">対訳がまだありません。用語を追加するか、AIで作成してください。</div>'; return; }
+  // ヘッダ
+  let html = '<table style="border-collapse:collapse;width:100%;"><tr style="position:sticky;top:0;background:#1a1a1a;">';
+  html += '<th style="padding:3px 5px;border:1px solid #333;color:#aaa;">日本語</th>';
+  langs.forEach(l => { html += `<th style="padding:3px 5px;border:1px solid #333;color:#aaa;white-space:nowrap;">${l.flag}${l.name}</th>`; });
+  html += '<th style="border:1px solid #333;"></th></tr>';
+  rows.forEach((r, i) => {
+    html += `<tr><td style="padding:3px 5px;border:1px solid #333;font-weight:700;color:#fff;white-space:nowrap;">${esc(r.ja)}</td>`;
+    langs.forEach(l => {
+      const v = r[l.code] || '';
+      const cls = v ? '#ddd' : '#a44';
+      html += `<td style="padding:3px 5px;border:1px solid #333;color:${cls};">${esc(v||'（未訳）')}</td>`;
+    });
+    html += `<td style="border:1px solid #333;"><button class="dict-del" onclick="delTaiyakuTerm(${i})">✕</button></td></tr>`;
+  });
+  html += '</table>';
+  list.innerHTML = html;
+}
+
+function addTaiyakuTerm() {
+  const ja = document.getElementById('newTaiyakuJa').value.trim();
+  const furi = document.getElementById('newTaiyakuFuri').value.trim();
+  if (!ja) { alert('日本語の用語を入力してください'); return; }
+  const t = currentTaiyaku();
+  if (t.some(e => e.ja === ja)) { alert('すでに登録されています'); return; }
+  const row = { ja, furi };
+  LANGUAGES.forEach(l => { row[l.code] = ''; });
+  t.push(row);
+  document.getElementById('newTaiyakuJa').value='';
+  document.getElementById('newTaiyakuFuri').value='';
+  renderTaiyaku(); saveServer();
+}
+
+function delTaiyakuTerm(i) {
+  if (!confirm('この用語を対訳表から削除しますか？')) return;
+  currentTaiyaku().splice(i,1);
+  renderTaiyaku(); saveServer();
+}
+
+// AIで未訳の用語を一括翻訳
+async function aiFillTaiyaku() {
+  if (!apiKey && !useServerKey) { alert('APIキーが設定されていません'); return; }
+  const rows = currentTaiyaku();
+  // 未訳セルがある用語を集める
+  const targets = rows.filter(r => LANGUAGES.some(l => !r[l.code]));
+  if (!targets.length) { alert('未訳の用語はありません'); return; }
+  const msg = document.getElementById('taiyakuMsg');
+  const langList = LANGUAGES.map(l => `"${l.code}"(${l.name})`).join(', ');
+  // 10語ずつ処理
+  const BATCH = 10;
+  let done = 0;
+  for (let i = 0; i < targets.length; i += BATCH) {
+    const batch = targets.slice(i, i+BATCH);
+    msg.textContent = `翻訳中... ${done}/${targets.length}語`;
+    const words = batch.map(r => r.ja).join('、');
+    const prompt = `建設業「${CATEGORIES.find(c=>c.id===selectedCategory)?.label||''}」の専門用語を翻訳します。次の日本語の用語それぞれを、以下の言語に訳してください。
+言語キー: ${langList}
+
+用語: ${words}
+
+各用語について、専門用語として正確な訳を返してください。JSON配列のみ出力:
+[{"ja":"用語","zh":"...","en":"...",...（全言語キー）}]
+説明不要。JSONのみ。`;
+    try {
+      const res = await fetch(apiUrl('/api'), {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ api_key:(useServerKey?'':apiKey), passphrase, model: MODEL_IDS.sonnet, max_tokens: 2500, messages:[{role:'user',content:prompt}] })
+      });
+      const data = await res.json();
+      let out = '';
+      if (data.content && data.content.length) out = data.content.map(b=>b.text||'').join('');
+      const m = out.match(/\[[\s\S]*\]/);
+      if (m) {
+        const arr = JSON.parse(m[0]);
+        arr.forEach(item => {
+          const row = rows.find(r => r.ja === item.ja);
+          if (row) LANGUAGES.forEach(l => { if (!row[l.code] && item[l.code]) row[l.code] = item[l.code]; });
+        });
+        renderTaiyaku();
+      }
+    } catch(e) { console.log('AI翻訳エラー:', e); }
+    done += batch.length;
+  }
+  msg.textContent = `✓ 完了（${targets.length}語）`;
+  saveServer();
+  setTimeout(()=>{ msg.textContent=''; }, 3000);
 }
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
