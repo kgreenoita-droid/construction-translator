@@ -126,6 +126,7 @@
   .btn-end:hover { background: var(--danger); color: #fff; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -235,8 +236,9 @@
     <span class="bar-label" style="color:var(--accent);font-weight:700;">📁 データ管理</span>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <span class="bar-label">文字起こし：</span>
-      <button class="btn-mini" onclick="downloadTranscript()">⬇ 今日の文字起こしを保存</button>
-      <span class="bar-label" style="color:#555;">（選択中の講習・本日分）</span>
+      <button class="btn-mini" onclick="downloadTranscript()">⬇ まとめて保存（講習×日付ごと）</button>
+      <button class="btn-mini" onclick="clearTranscripts()">🗑 全消去</button>
+      <span class="bar-label" id="tlogCount" style="color:#555;">保存中：なし</span>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <span class="bar-label">辞書・用語集：</span>
@@ -993,29 +995,75 @@ function logTranscript(text) {
   const d = new Date();
   const t = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
   transcriptLog[day][selectedCategory].push({ time: t, ja: text });
-  // localStorageは容量制限があるので直近7日分だけ保持
+  // localStorageは容量制限があるので直近31日分だけ保持
   const days = Object.keys(transcriptLog).sort();
-  while (days.length > 7) { delete transcriptLog[days.shift()]; }
+  while (days.length > 31) { delete transcriptLog[days.shift()]; }
   try { localStorage.setItem('teacher_tlog', JSON.stringify(transcriptLog)); } catch(e) {}
+  updateTranscriptCount();
 }
 
-// 今日の文字起こしをダウンロード
-function downloadTranscript() {
-  const day = todayStr();
-  const catName = (CATEGORIES.find(c=>c.id===selectedCategory)?.label || selectedCategory).replace(/[^\p{L}\p{N}]/gu,'');
-  const entries = (transcriptLog[day] && transcriptLog[day][selectedCategory]) || [];
-  if (!entries.length) { alert('本日・この講習の文字起こしがまだありません'); return; }
-  const cat = CATEGORIES.find(c=>c.id===selectedCategory);
-  let txt = `講習日: ${day}\n講習区分: ${cat?cat.label:selectedCategory}\n`;
+// 保存済みの文字起こし件数を表示
+function updateTranscriptCount() {
+  const el = document.getElementById('tlogCount');
+  if (!el) return;
+  let files = 0, lines = 0;
+  Object.keys(transcriptLog).forEach(day => Object.keys(transcriptLog[day]).forEach(cat => {
+    files++; lines += transcriptLog[day][cat].length;
+  }));
+  el.textContent = files ? `保存中：${files}ファイル（講習×日付）／計${lines}文` : '保存中：なし';
+}
+
+// 1つの講習×日付分のテキストを組み立て
+function buildTranscriptText(day, catId, entries) {
+  const cat = CATEGORIES.find(c=>c.id===catId);
+  let txt = `講習日: ${day}\n講習区分: ${cat?cat.label:catId}\n`;
   if (cat && cat.subs) txt += `対象講習（候補）: ${cat.subs.join(' / ')}\n`;
   txt += `件数: ${entries.length}\n`;
   txt += '='.repeat(40) + '\n\n';
   entries.forEach(e => { txt += `[${e.time}] ${e.ja}\n`; });
-  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${day}_${catName}.txt`;
-  a.click();
+  return txt;
+}
+
+// 文字起こしを「講習×日付」ごとに別ファイルでまとめてダウンロード（ZIP）
+async function downloadTranscript() {
+  // 保存されている (日付, 講習) の組を集める
+  const pairs = [];
+  Object.keys(transcriptLog).sort().forEach(day => {
+    Object.keys(transcriptLog[day]).forEach(cat => {
+      const entries = transcriptLog[day][cat];
+      if (entries && entries.length) pairs.push({ day, cat, entries });
+    });
+  });
+  if (!pairs.length) { alert('保存されている文字起こしがありません'); return; }
+
+  const safe = (s) => String(s).replace(/[^\p{L}\p{N}]/gu,'');
+  // 1件だけなら単独の.txt、複数ならZIP
+  if (pairs.length === 1) {
+    const p = pairs[0];
+    const catName = safe(CATEGORIES.find(c=>c.id===p.cat)?.label || p.cat);
+    const blob = new Blob([buildTranscriptText(p.day, p.cat, p.entries)], { type:'text/plain;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${p.day}_${catName}.txt`; a.click();
+  } else if (typeof JSZip !== 'undefined') {
+    const zip = new JSZip();
+    pairs.forEach(p => {
+      const catName = safe(CATEGORIES.find(c=>c.id===p.cat)?.label || p.cat);
+      zip.file(`${p.day}_${catName}.txt`, buildTranscriptText(p.day, p.cat, p.entries));
+    });
+    const blob = await zip.generateAsync({ type:'blob' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `文字起こし_${todayStr()}.zip`; a.click();
+  } else {
+    alert('ZIP部品の読み込み中です。少し待って再度押してください。'); return;
+  }
+  const m = document.getElementById('dataMsg'); if (m) { m.textContent = `✓ ${pairs.length}ファイルを保存`; setTimeout(()=>{m.textContent='';},3000); }
+}
+
+// 文字起こしを全消去（ダウンロード後の片付け用）
+function clearTranscripts() {
+  if (!confirm('保存中の文字起こしをすべて消去しますか？\n（先にダウンロードしておくことをおすすめします）')) return;
+  transcriptLog = {};
+  try { localStorage.setItem('teacher_tlog', JSON.stringify(transcriptLog)); } catch(e) {}
+  updateTranscriptCount();
+  const m = document.getElementById('dataMsg'); if (m) { m.textContent = '✓ 文字起こしを消去しました'; setTimeout(()=>{m.textContent='';},3000); }
 }
 
 // 辞書・用語集をバックアップ（JSON）
@@ -1315,6 +1363,7 @@ async function init() {
   renderDict();
   renderCtx();
   updateTopBar();
+  updateTranscriptCount();
   loadServer();
   connectWS();
 }
