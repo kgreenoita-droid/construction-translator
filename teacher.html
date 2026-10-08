@@ -89,6 +89,8 @@
   .hist-btns { display: flex; gap: 4px; flex-shrink: 0; }
   .hist-edit { background: #f0f2f5; border: 1px solid var(--border); color: #555; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
   .hist-edit:hover { border-color: var(--accent); color: var(--accent); }
+  .hist-del { background: #fff; border: 1.5px solid var(--danger); color: var(--danger); border-radius: 6px; padding: 3px 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; line-height: 1.1; white-space: nowrap; }
+  .hist-del:hover { background: var(--danger); color: #fff; }
   .edit-input { width: 70%; background: #fff; border: 1px solid var(--accent); color: #111; border-radius: 6px; padding: 6px 10px; font-size: 15px; font-family: inherit; }
   /* 文字サイズ段階（履歴の翻訳文字） */
   body[data-size="s"] .hist-text { font-size: 18px; }
@@ -749,7 +751,7 @@ function renderHistory() {
       return `<div class="hist-lang-row"><span class="hist-flag">${lang.flag}</span><span class="hist-name">${lang.name}</span><span class="hist-text ${cls}">${esc(txt)}</span></div>`;
     }).join('');
     const jaLine = `<div class="hist-ja" id="ja-${item.id}" onclick="startEdit('${item.id}')" title="クリックで修正">${esc(item.ja)}</div>`;
-    const delBtn = `<button class="hist-edit" onclick="deleteHist('${item.id}')" title="削除">🗑</button>`;
+    const delBtn = `<button class="hist-del" onclick="deleteHist('${item.id}')" title="この発言を削除（受講者側からも消えます）">✕</button>`;
     return `<div class="hist-item ${idx===0?'latest':''}" id="hist-${item.id}"><div class="hist-head">${jaLine}${delBtn}</div>${rows}</div>`;
   }).join('');
   list.scrollTop = 0;
@@ -793,8 +795,9 @@ async function confirmEdit(id) {
   await retranslate(item);
 }
 
-// 履歴削除
+// 履歴削除（講師側で消すと受講者側からも消える）
 function deleteHist(id) {
+  if (!confirm('この発言を削除しますか？\n受講者側の画面からも消えます。')) return;
   history = history.filter(h => h.id !== id);
   renderHistory();
   sendJa('delete', id, '');
