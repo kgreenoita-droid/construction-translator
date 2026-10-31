@@ -784,7 +784,10 @@ function startEdit(id) {
   if (!item) return;
   const jaEl = document.getElementById('ja-' + id);
   if (!jaEl) return;
-  jaEl.innerHTML = `<input class="edit-input" id="edit-${id}" value="${esc(item.ja).replace(/"/g,'&quot;')}" />
+  // 編集中は親の「クリックで修正」を無効化（入力欄の途中をクリックしても再起動しないように）
+  jaEl.onclick = null;
+  jaEl.style.cursor = 'text';
+  jaEl.innerHTML = `<input class="edit-input" id="edit-${id}" value="${esc(item.ja).replace(/"/g,'&quot;')}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" />
     <button class="hist-edit" onclick="confirmEdit('${id}')">✓ 再翻訳</button>
     <button class="hist-edit" onclick="renderHistory()">取消</button>`;
   const inp = document.getElementById('edit-' + id);
@@ -813,6 +816,8 @@ async function confirmEdit(id) {
   item.loading = true;
   renderHistory();
   sendJa('edit', item.id, applyDict(newJa)); // 受講者ページへ修正後の日本語を配信
+  // 修正後は入力欄へ自動フォーカス → そのままAqua Voiceで続けて話せる
+  const ji = document.getElementById('jaInput'); if (ji) ji.focus();
   await retranslate(item);
 }
 
